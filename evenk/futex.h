@@ -1,3 +1,7 @@
+//
+// Wrappers for Linux futex system call.
+//
+
 #ifndef EVENK_FUTEX_H_
 #define EVENK_FUTEX_H_
 
