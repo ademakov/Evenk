@@ -1,8 +1,8 @@
 #ifndef EVENK_FUTEX_H_
 #define EVENK_FUTEX_H_
 
-#include <errno.h>
-#include <stddef.h>
+#include <cerrno>
+#include <cstddef>
 #include <atomic>
 
 #if __linux__
