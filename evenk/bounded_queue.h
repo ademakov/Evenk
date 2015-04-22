@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <stdexcept>
 #include <thread>
 
 #include "evenk/basic.h"
