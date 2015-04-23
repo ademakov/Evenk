@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <thread>
 
+#include "evenk/backoff.h"
 #include "evenk/basic.h"
 #include "evenk/concurrency.h"
 #include "evenk/futex.h"
