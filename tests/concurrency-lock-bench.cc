@@ -1,3 +1,4 @@
+#include "evenk/spinlock.h"
 #include "evenk/concurrency.h"
 
 #include <iostream>
