@@ -1,5 +1,5 @@
 //
-// Synchronization utilities.
+// Synchronization Primitives
 //
 
 #ifndef EVENK_SYNCH_H_

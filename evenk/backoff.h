@@ -1,5 +1,5 @@
 //
-// Busy-waiting back-off utilities.
+// Busy-Waiting Backoff Utilities
 //
 
 #ifndef EVENK_BACKOFF_H_

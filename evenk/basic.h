@@ -1,4 +1,4 @@
-// Basic definitions.
+// Basic Definitions
 
 #ifndef EVENK_BASIC_H_
 #define EVENK_BASIC_H_
