@@ -7,7 +7,7 @@
 
 #include <deque>
 
-#include "evenk/concurrency.h"
+#include "evenk/synch.h"
 
 namespace ev {
 namespace concurrency {

@@ -13,8 +13,8 @@
 
 #include "evenk/backoff.h"
 #include "evenk/basic.h"
-#include "evenk/concurrency.h"
 #include "evenk/futex.h"
+#include "evenk/synch.h"
 
 namespace ev {
 namespace concurrency {

@@ -1,5 +1,5 @@
 #include "evenk/spinlock.h"
-#include "evenk/concurrency.h"
+#include "evenk/synch.h"
 
 #include <iostream>
 #include <chrono>

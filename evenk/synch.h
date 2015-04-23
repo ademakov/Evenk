@@ -1,18 +1,16 @@
 //
-// Miscellaneous concurrency utilities.
+// Synchronization utilities.
 //
 
-#ifndef EVENK_CONCURRENCY_H_
-#define EVENK_CONCURRENCY_H_
-
-#include <assert.h>
-#include <limits.h>
-#include <pthread.h>
+#ifndef EVENK_SYNCH_H_
+#define EVENK_SYNCH_H_
 
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <system_error>
+
+#include <pthread.h>
 
 #include "evenk/backoff.h"
 #include "evenk/futex.h"
@@ -21,7 +19,7 @@ namespace ev {
 namespace concurrency {
 
 //
-// Waitable Locks
+// Mutexes
 //
 
 class StdMutex : public std::mutex {
@@ -34,10 +32,10 @@ class PosixMutex {
  public:
   PosixMutex() noexcept : mutex_(PTHREAD_MUTEX_INITIALIZER) {}
 
-  ~PosixMutex() noexcept { pthread_mutex_destroy(&mutex_); }
-
   PosixMutex(const PosixMutex&) = delete;
   PosixMutex& operator=(const PosixMutex&) = delete;
+
+  ~PosixMutex() noexcept { pthread_mutex_destroy(&mutex_); }
 
   void Lock() {
     int ret = pthread_mutex_lock(&mutex_);
@@ -209,7 +207,9 @@ class FutexCondVar {
 
   void Wait(LockGuard<FutexLock>& guard) {
     FutexLock* owner = guard.GetLockPtr();
-    assert(owner_ == nullptr || owner_ == owner);
+    if (owner_ != nullptr && owner_ != owner)
+      throw std::invalid_argument(
+          "different locks used for the same condition variable.");
     owner_.store(owner, std::memory_order_relaxed);
 
     count_.fetch_add(1, std::memory_order_relaxed);
@@ -275,4 +275,4 @@ using DefaultSynch = StdSynch;
 }  // namespace concurrency
 }  // namespace ev
 
-#endif  // !EVENK_CONCURRENCY_H_
+#endif  // !EVENK_SYNCH_H_
