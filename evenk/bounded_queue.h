@@ -118,7 +118,7 @@ class BoundedQueue {
       throw std::invalid_argument("BoundedQueue size must be a power of two");
 
     void* ring;
-    if (posix_memalign(&ring, ev::kCacheLineSize, size * sizeof(Slot)))
+    if (::posix_memalign(&ring, ev::kCacheLineSize, size * sizeof(Slot)))
       throw std::bad_alloc();
 
     ring_ = new (ring) Slot[size];
