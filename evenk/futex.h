@@ -17,8 +17,8 @@
 
 namespace ev {
 
-inline int futex_wait(std::atomic<uint32_t>& futex __attribute__((unused)),
-                      uint32_t value __attribute__((unused))) {
+inline int futex_wait(std::atomic<std::uint32_t>& futex __attribute__((unused)),
+                      std::uint32_t value __attribute__((unused))) {
 #if __linux__
 #if __x86_64__
   int result;
@@ -41,7 +41,7 @@ inline int futex_wait(std::atomic<uint32_t>& futex __attribute__((unused)),
 #endif
 }
 
-inline int futex_wake(std::atomic<uint32_t>& futex __attribute__((unused)),
+inline int futex_wake(std::atomic<std::uint32_t>& futex __attribute__((unused)),
                       int count __attribute__((unused))) {
 #if __linux__
 #if __x86_64__
@@ -64,10 +64,10 @@ inline int futex_wake(std::atomic<uint32_t>& futex __attribute__((unused)),
 #endif
 }
 
-inline int futex_requeue(std::atomic<uint32_t>& futex __attribute__((unused)),
+inline int futex_requeue(std::atomic<std::uint32_t>& futex __attribute__((unused)),
                          int futex_count __attribute__((unused)),
                          int queue_count __attribute__((unused)),
-                         std::atomic<uint32_t>& queue __attribute__((unused))) {
+                         std::atomic<std::uint32_t>& queue __attribute__((unused))) {
 #if __linux__
 #if __x86_64__
   int result;
@@ -92,11 +92,11 @@ inline int futex_requeue(std::atomic<uint32_t>& futex __attribute__((unused)),
 #endif
 }
 
-inline int futex_requeue(std::atomic<uint32_t>& futex __attribute__((unused)),
+inline int futex_requeue(std::atomic<std::uint32_t>& futex __attribute__((unused)),
                          int futex_count __attribute__((unused)),
                          int queue_count __attribute__((unused)),
-                         std::atomic<uint32_t>& queue __attribute__((unused)),
-                         uint32_t futex_value __attribute__((unused))) {
+                         std::atomic<std::uint32_t>& queue __attribute__((unused)),
+                         std::uint32_t futex_value __attribute__((unused))) {
 #if __linux__
 #if __x86_64__
   int result;

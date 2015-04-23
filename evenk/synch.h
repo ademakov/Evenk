@@ -68,7 +68,7 @@ class FutexLock {
 
   template <typename Backoff>
   void Lock(Backoff backoff) {
-    for (uint32_t value = 0; !futex_.compare_exchange_strong(
+    for (std::uint32_t value = 0; !futex_.compare_exchange_strong(
              value, 1, std::memory_order_acquire, std::memory_order_relaxed);
          value = 0) {
       if (backoff()) {
@@ -92,7 +92,7 @@ class FutexLock {
  private:
   friend class FutexCondVar;
 
-  std::atomic<uint32_t> futex_;
+  std::atomic<std::uint32_t> futex_;
 };
 
 //
@@ -214,7 +214,7 @@ class FutexCondVar {
 
     count_.fetch_add(1, std::memory_order_relaxed);
     std::atomic_thread_fence(std::memory_order_acq_rel);
-    uint32_t value = futex_.load(std::memory_order_relaxed);
+    std::uint32_t value = futex_.load(std::memory_order_relaxed);
 
     owner->Unlock();
 
@@ -239,8 +239,8 @@ class FutexCondVar {
   }
 
  private:
-  std::atomic<uint32_t> futex_;
-  std::atomic<uint32_t> count_;
+  std::atomic<std::uint32_t> futex_;
+  std::atomic<std::uint32_t> count_;
   std::atomic<FutexLock*> owner_;
 };
 

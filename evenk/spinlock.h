@@ -49,7 +49,7 @@ class TicketLock {
     }
   }
 
-  template <typename Pause, uint32_t Backoff = 50>
+  template <typename Pause>
   void Lock(ProportionalBackoff<Pause> backoff) {
     base_type tail = tail_.fetch_add(1, std::memory_order_relaxed);
     for (;;) {

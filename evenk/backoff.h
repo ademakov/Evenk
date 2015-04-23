@@ -72,15 +72,15 @@ class LinearBackoff {
   }
 
  private:
-  const uint32_t ceiling_;
-  uint32_t backoff_;
+  const std::uint32_t ceiling_;
+  std::uint32_t backoff_;
   Pause pause_;
 };
 
 template <typename Pause>
 class ExponentialBackoff {
  public:
-  ExponentialBackoff(uint32_t ceiling) noexcept : ceiling_{ceiling},
+  ExponentialBackoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling},
                                                   backoff_{0} {}
 
   bool operator()() {
@@ -95,23 +95,23 @@ class ExponentialBackoff {
   }
 
  private:
-  const uint32_t ceiling_;
-  uint32_t backoff_;
+  const std::uint32_t ceiling_;
+  std::uint32_t backoff_;
   Pause pause_;
 };
 
 template <typename Pause>
 class ProportionalBackoff {
  public:
-  ProportionalBackoff(uint32_t backoff) noexcept : backoff_{backoff} {}
+  ProportionalBackoff(std::uint32_t backoff) noexcept : backoff_{backoff} {}
 
-  bool operator()(uint32_t factor = 1) noexcept {
+  bool operator()(std::uint32_t factor = 1) noexcept {
     pause_(backoff_ * factor);
     return false;
   }
 
  private:
-  uint32_t backoff_;
+  std::uint32_t backoff_;
   Pause pause_;
 };
 
