@@ -60,7 +60,16 @@ class BoundedQueueFutexWait : public BoundedQueueSlotBase {
  public:
   std::uint32_t WaitAndLoad(std::uint32_t value) {
     wait_count_.fetch_add(1, std::memory_order_relaxed);
-    ev::futex_wait(ticket_, value);  // Presuming this is a full memory fence.
+    // FIXME: Presuming a futex syscall is a full memory fence on its own.
+    // The threads that load the wait_count_ field must see it incremented
+    // as long as there is any chance the current thread might be sleeping
+    // on the futex. On the other hand within the futex system call, if the
+    // current thread is not sleeping yet, it should be able to observe a
+    // possible futex value update from other threads.
+    //
+    // If for some architecture (ARM? POWER?) this is not true, then an
+    // explicit memory fence should be added here.
+    ev::futex_wait(ticket_, value);
     wait_count_.fetch_sub(1, std::memory_order_relaxed);
     return Load();
   }
