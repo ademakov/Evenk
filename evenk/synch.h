@@ -5,10 +5,11 @@
 #ifndef EVENK_SYNCH_H_
 #define EVENK_SYNCH_H_
 
-#include <thread>
-#include <mutex>
 #include <condition_variable>
+#include <limits>
+#include <mutex>
 #include <system_error>
+#include <thread>
 
 #include <pthread.h>
 
@@ -234,7 +235,9 @@ class FutexCondVar {
     futex_.fetch_add(1, std::memory_order_acquire);
     if (count_.load(std::memory_order_relaxed)) {
       FutexLock* owner = owner_.load(std::memory_order_relaxed);
-      if (owner) ev::futex_requeue(futex_, 1, INT_MAX, owner->futex_);
+      if (owner)
+        ev::futex_requeue(futex_, 1, std::numeric_limits<int>::max(),
+                          owner->futex_);
     }
   }
 
