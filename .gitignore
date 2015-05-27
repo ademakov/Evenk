@@ -1,18 +1,52 @@
+# Various backup files
 *~
-*.o
-*.a
 
-.deps
+# IDE settings
+/.project
+/.cproject
+/.settings
+/nbproject
+
+# Autotools files
 Makefile
 Makefile.in
+.deps
 
 /aclocal.m4
 /autom4te.cache
 /configure
 /config.log
 /config.status
+/build-aux
 /evenk/config.h
 /evenk/config.h.in
 /evenk/stamp-h1
 
-/nbproject
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
