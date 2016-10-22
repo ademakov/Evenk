@@ -1,0 +1,34 @@
+BasedOnStyle: LLVM
+
+Language: Cpp
+Standard: Cpp11
+
+ColumnLimit: 96
+MaxEmptyLinesToKeep: 2
+UseTab: Always
+
+TabWidth: 8
+IndentWidth: 8
+ContinuationIndentWidth: 8
+
+AccessModifierOffset: -8
+ConstructorInitializerIndentWidth: 8
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterStruct: true
+  AfterFunction: true
+BinPackArguments: false
+BinPackParameters: false
+
+AllowShortBlocksOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+
+AlwaysBreakTemplateDeclarations: true
+AlwaysBreakAfterReturnType: TopLevelDefinitions
+BreakBeforeBinaryOperators: All
+
+ReflowComments: false
+
+SpaceAfterCStyleCast: true
