@@ -32,66 +32,80 @@
 namespace evenk {
 namespace concurrency {
 
-template <typename ValueType, typename SynchPolicy = DefaultSynch,
-          typename Sequence = std::deque<ValueType>>
-class Queue {
- public:
-  Queue() noexcept : finish_(false) {}
+template <typename ValueType,
+	  typename SynchPolicy = DefaultSynch,
+	  typename Sequence = std::deque<ValueType>>
+class Queue
+{
+public:
+	Queue() noexcept : finish_(false)
+	{
+	}
 
-  Queue(Queue&& other) noexcept : finish_(other.finish_) {
-    std::swap(queue_, other.queue_);
-  }
+	Queue(Queue &&other) noexcept : finish_(other.finish_)
+	{
+		std::swap(queue_, other.queue_);
+	}
 
-  bool Empty() const {
-    LockGuard<LockType> guard(lock_);
-    return queue_.empty();
-  }
+	bool Empty() const
+	{
+		LockGuard<LockType> guard(lock_);
+		return queue_.empty();
+	}
 
-  bool Finished() const { return finish_; }
+	bool Finished() const
+	{
+		return finish_;
+	}
 
-  void Finish() {
-    LockGuard<LockType> guard(lock_);
-    finish_ = true;
-    cond_.NotifyAll();
-  }
+	void Finish()
+	{
+		LockGuard<LockType> guard(lock_);
+		finish_ = true;
+		cond_.NotifyAll();
+	}
 
-  template <typename... Backoff>
-  void Enqueue(ValueType&& data, Backoff... backoff) {
-    LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
-    queue_.push_back(std::move(data));
-    cond_.NotifyOne();
-  }
+	template <typename... Backoff>
+	void Enqueue(ValueType &&data, Backoff... backoff)
+	{
+		LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
+		queue_.push_back(std::move(data));
+		cond_.NotifyOne();
+	}
 
-  template <typename... Backoff>
-  void Enqueue(const ValueType& data, Backoff... backoff) {
-    LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
-    queue_.push_back(data);
-    cond_.NotifyOne();
-  }
+	template <typename... Backoff>
+	void Enqueue(const ValueType &data, Backoff... backoff)
+	{
+		LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
+		queue_.push_back(data);
+		cond_.NotifyOne();
+	}
 
-  template <typename... Backoff>
-  bool Dequeue(ValueType& data, Backoff... backoff) {
-    LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
-    while (queue_.empty()) {
-      if (Finished()) return false;
-      cond_.Wait(guard);
-    }
-    data = std::move(queue_.front());
-    queue_.pop_front();
-    return true;
-  }
+	template <typename... Backoff>
+	bool Dequeue(ValueType &data, Backoff... backoff)
+	{
+		LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
+		while (queue_.empty()) {
+			if (Finished())
+				return false;
+			cond_.Wait(guard);
+		}
+		data = std::move(queue_.front());
+		queue_.pop_front();
+		return true;
+	}
 
- private:
-  using LockType = typename SynchPolicy::LockType;
-  using CondVarType = typename SynchPolicy::CondVarType;
+private:
+	using LockType = typename SynchPolicy::LockType;
+	using CondVarType = typename SynchPolicy::CondVarType;
 
-  bool finish_;
-  LockType lock_;
-  CondVarType cond_;
-  Sequence queue_;
+	bool finish_;
+	LockType lock_;
+	CondVarType cond_;
+	Sequence queue_;
 };
 
-}  // namespace concurrency
-}  // namespace evenk
+} // namespace concurrency
+} // namespace evenk
 
-#endif  // !EVENK_QUEUE_H_
+#endif // !EVENK_QUEUE_H_

@@ -29,8 +29,8 @@
 #include <cstdint>
 #include <thread>
 
-#include <time.h>
 #include <emmintrin.h>
+#include <time.h>
 
 namespace evenk {
 namespace concurrency {
@@ -39,123 +39,150 @@ namespace concurrency {
 // Delays for busy waiting.
 //
 
-struct CPUCycle {
-  void operator()(std::uint32_t n) {
-    while (n--) std::atomic_signal_fence(std::memory_order_relaxed);
-  }
+struct CPUCycle
+{
+	void operator()(std::uint32_t n)
+	{
+		while (n--)
+			std::atomic_signal_fence(std::memory_order_relaxed);
+	}
 };
 
-struct CPURelax {
-  void operator()(std::uint32_t n) {
-    while (n--) ::_mm_pause();
-  }
+struct CPURelax
+{
+	void operator()(std::uint32_t n)
+	{
+		while (n--)
+			::_mm_pause();
+	}
 };
 
-struct NanoSleep {
-  void operator()(std::uint32_t n) {
-    ::timespec ts = {.tv_sec = 0, .tv_nsec = n};
-    ::nanosleep(&ts, NULL);
-  }
+struct NanoSleep
+{
+	void operator()(std::uint32_t n)
+	{
+		::timespec ts = {.tv_sec = 0, .tv_nsec = n};
+		::nanosleep(&ts, NULL);
+	}
 };
 
 //
 // Back-off policies for busy waiting.
 //
 
-class NoBackoff {
- public:
-  bool operator()() { return true; }
+class NoBackoff
+{
+public:
+	bool operator()()
+	{
+		return true;
+	}
 };
 
-class YieldBackoff {
- public:
-  bool operator()() {
-    std::this_thread::yield();
-    return false;
-  }
-};
-
-template <typename Pause>
-class LinearBackoff {
- public:
-  LinearBackoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling},
-                                                  backoff_{0} {}
-
-  bool operator()() {
-    if (backoff_ >= ceiling_) {
-      pause_(ceiling_);
-      return true;
-    } else {
-      pause_(backoff_++);
-      return false;
-    }
-  }
-
- private:
-  const std::uint32_t ceiling_;
-  std::uint32_t backoff_;
-  Pause pause_;
+class YieldBackoff
+{
+public:
+	bool operator()()
+	{
+		std::this_thread::yield();
+		return false;
+	}
 };
 
 template <typename Pause>
-class ExponentialBackoff {
- public:
-  ExponentialBackoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling},
-                                                  backoff_{0} {}
+class LinearBackoff
+{
+public:
+	LinearBackoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
+	{
+	}
 
-  bool operator()() {
-    if (backoff_ >= ceiling_) {
-      pause_(ceiling_);
-      return true;
-    } else {
-      pause_(backoff_);
-      backoff_ += backoff_ + 1;
-      return false;
-    }
-  }
+	bool operator()()
+	{
+		if (backoff_ >= ceiling_) {
+			pause_(ceiling_);
+			return true;
+		} else {
+			pause_(backoff_++);
+			return false;
+		}
+	}
 
- private:
-  const std::uint32_t ceiling_;
-  std::uint32_t backoff_;
-  Pause pause_;
+private:
+	const std::uint32_t ceiling_;
+	std::uint32_t backoff_;
+	Pause pause_;
 };
 
 template <typename Pause>
-class ProportionalBackoff {
- public:
-  ProportionalBackoff(std::uint32_t backoff) noexcept : backoff_{backoff} {}
+class ExponentialBackoff
+{
+public:
+	ExponentialBackoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
+	{
+	}
 
-  bool operator()(std::uint32_t factor = 1) noexcept {
-    pause_(backoff_ * factor);
-    return false;
-  }
+	bool operator()()
+	{
+		if (backoff_ >= ceiling_) {
+			pause_(ceiling_);
+			return true;
+		} else {
+			pause_(backoff_);
+			backoff_ += backoff_ + 1;
+			return false;
+		}
+	}
 
- private:
-  std::uint32_t backoff_;
-  Pause pause_;
+private:
+	const std::uint32_t ceiling_;
+	std::uint32_t backoff_;
+	Pause pause_;
+};
+
+template <typename Pause>
+class ProportionalBackoff
+{
+public:
+	ProportionalBackoff(std::uint32_t backoff) noexcept : backoff_{backoff}
+	{
+	}
+
+	bool operator()(std::uint32_t factor = 1) noexcept
+	{
+		pause_(backoff_ * factor);
+		return false;
+	}
+
+private:
+	std::uint32_t backoff_;
+	Pause pause_;
 };
 
 template <typename FirstBackoff, typename SecondBackoff>
-class CompositeBackoff {
- public:
-  CompositeBackoff(FirstBackoff a, SecondBackoff b) noexcept
-      : first_(a),
-        second_(b),
-        use_second_{false} {}
+class CompositeBackoff
+{
+public:
+	CompositeBackoff(FirstBackoff a, SecondBackoff b) noexcept
+		: first_(a), second_(b), use_second_{false}
+	{
+	}
 
-  bool operator()() noexcept {
-    if (use_second_) return second_();
-    use_second_ = first_();
-    return false;
-  }
+	bool operator()() noexcept
+	{
+		if (use_second_)
+			return second_();
+		use_second_ = first_();
+		return false;
+	}
 
- private:
-  FirstBackoff first_;
-  SecondBackoff second_;
-  bool use_second_;
+private:
+	FirstBackoff first_;
+	SecondBackoff second_;
+	bool use_second_;
 };
 
-}  // namespace concurrency
-}  // namespace evenk
+} // namespace concurrency
+} // namespace evenk
 
-#endif  // !EVENK_BACKOFF_H_
+#endif // !EVENK_BACKOFF_H_
