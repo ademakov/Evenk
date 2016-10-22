@@ -36,7 +36,7 @@
 #include "evenk/futex.h"
 #include "evenk/synch.h"
 
-namespace ev {
+namespace evenk {
 namespace concurrency {
 
 struct BoundedQueueSlotBase {
@@ -89,7 +89,7 @@ class BoundedQueueFutexWait : public BoundedQueueSlotBase {
     //
     // If for some architecture (ARM? POWER?) this is not true, then an
     // explicit memory fence should be added here.
-    ev::futex_wait(ticket_, value);
+    evenk::futex_wait(ticket_, value);
     wait_count_.fetch_sub(1, std::memory_order_relaxed);
     return Load();
   }
@@ -147,7 +147,7 @@ class BoundedQueue {
       throw std::invalid_argument("BoundedQueue size must be a power of two");
 
     void* ring;
-    if (::posix_memalign(&ring, ev::kCacheLineSize, size * sizeof(Slot)))
+    if (::posix_memalign(&ring, evenk::kCacheLineSize, size * sizeof(Slot)))
       throw std::bad_alloc();
 
     ring_ = new (ring) Slot[size];
@@ -210,7 +210,7 @@ class BoundedQueue {
   }
 
  private:
-  struct alignas(ev::kCacheLineSize) Slot : public WaitType {
+  struct alignas(evenk::kCacheLineSize) Slot : public WaitType {
     ValueType value;
   };
 
@@ -287,14 +287,14 @@ class BoundedQueue {
 
   std::atomic<bool> finish_;
 
-  alignas(ev::kCacheLineSize) std::atomic<std::uint64_t> head_;
-  alignas(ev::kCacheLineSize) std::atomic<std::uint64_t> tail_;
+  alignas(evenk::kCacheLineSize) std::atomic<std::uint64_t> head_;
+  alignas(evenk::kCacheLineSize) std::atomic<std::uint64_t> tail_;
 };
 
 template <typename ValueType>
 using DefaultBoundedQueue = BoundedQueue<ValueType, BoundedQueueNoWait>;
 
 }  // namespace concurrency
-}  // namespace ev
+}  // namespace evenk
 
 #endif  // !EVENK_BOUNDED_QUEUE_H_

@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace evc = ev::concurrency;
+namespace evc = evenk::concurrency;
 
 evc::StdMutex mutex;
 evc::PosixMutex posix_mutex;

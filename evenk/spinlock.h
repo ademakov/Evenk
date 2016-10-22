@@ -29,7 +29,7 @@
 
 #include "evenk/backoff.h"
 
-namespace ev {
+namespace evenk {
 namespace concurrency {
 
 class SpinLock {
@@ -89,6 +89,6 @@ class TicketLock {
 };
 
 }  // namespace concurrency
-}  // namespace ev
+}  // namespace evenk
 
 #endif  // !EVENK_SPINLOCK_H_

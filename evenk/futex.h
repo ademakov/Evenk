@@ -35,7 +35,7 @@
 #include <sys/syscall.h>
 #endif
 
-namespace ev {
+namespace evenk {
 
 inline int futex_wait(std::atomic<std::uint32_t>& futex __attribute__((unused)),
                       std::uint32_t value __attribute__((unused))) {
@@ -142,6 +142,6 @@ inline int futex_requeue(std::atomic<std::uint32_t>& futex __attribute__((unused
 #endif
 }
 
-}  // namespace ev
+}  // namespace evenk
 
 #endif  // !EVENK_FUTEX_H_

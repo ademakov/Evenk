@@ -27,10 +27,10 @@
 
 #include <cstddef>
 
-namespace ev {
+namespace evenk {
 
 constexpr std::size_t kCacheLineSize = 64;
 
-}
+} // namespace evenk
 
 #endif  // !EVENK_BASIC_H_

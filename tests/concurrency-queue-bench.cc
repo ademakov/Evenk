@@ -7,7 +7,7 @@
 #include <cstring>
 #include <vector>
 
-namespace evc = ev::concurrency;
+namespace evc = evenk::concurrency;
 
 template <typename Queue, typename... Backoff>
 void consume(Queue& queue, size_t& count, Backoff... backoff) {

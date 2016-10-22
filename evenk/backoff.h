@@ -32,7 +32,7 @@
 #include <time.h>
 #include <emmintrin.h>
 
-namespace ev {
+namespace evenk {
 namespace concurrency {
 
 //
@@ -156,6 +156,6 @@ class CompositeBackoff {
 };
 
 }  // namespace concurrency
-}  // namespace ev
+}  // namespace evenk
 
 #endif  // !EVENK_BACKOFF_H_
