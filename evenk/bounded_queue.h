@@ -38,172 +38,172 @@
 
 namespace evenk {
 
-class BoundedQueueSlotBase
+class bounded_queue_ticket : protected std::atomic<std::uint32_t>
 {
 public:
-	void Initialize(std::uint32_t value)
+	using base = std::atomic<std::uint32_t>;
+
+	void initialize(std::uint32_t value)
 	{
-		ticket_.store(value, std::memory_order_relaxed);
+		base::store(value, std::memory_order_relaxed);
 	}
 
-	std::uint32_t Load() const
+	std::uint32_t load() const
 	{
-		return ticket_.load(std::memory_order_acquire);
+		return base::load(std::memory_order_acquire);
 	}
 
-	void Store(std::uint32_t value)
+	void store(std::uint32_t value)
 	{
-		ticket_.store(value, std::memory_order_release);
-	}
-
-protected:
-	std::atomic<std::uint32_t> ticket_;
-};
-
-class BoundedQueueNoWait : public BoundedQueueSlotBase
-{
-public:
-	std::uint32_t WaitAndLoad(std::uint32_t)
-	{
-		return Load();
-	}
-
-	void StoreAndWake(std::uint32_t value)
-	{
-		Store(value);
-	}
-
-	void Wake()
-	{
+		base::store(value, std::memory_order_release);
 	}
 };
 
-class BoundedQueueYieldWait : public BoundedQueueSlotBase
+class bounded_queue_busywait : public bounded_queue_ticket
 {
 public:
-	std::uint32_t WaitAndLoad(std::uint32_t)
+	std::uint32_t wait_and_load(std::uint32_t)
+	{
+		return load();
+	}
+
+	void store_and_wake(std::uint32_t value)
+	{
+		store(value);
+	}
+
+	void wake()
+	{
+	}
+};
+
+class bounded_queue_yield : public bounded_queue_ticket
+{
+public:
+	std::uint32_t wait_and_load(std::uint32_t)
 	{
 		std::this_thread::yield();
-		return Load();
+		return load();
 	}
 
-	void StoreAndWake(std::uint32_t value)
+	void store_and_wake(std::uint32_t value)
 	{
-		Store(value);
+		store(value);
 	}
 
-	void Wake()
+	void wake()
 	{
 	}
 };
 
-class BoundedQueueFutexWait : public BoundedQueueSlotBase
+class bounded_queue_futex : public bounded_queue_ticket
 {
 public:
-	std::uint32_t WaitAndLoad(std::uint32_t value)
+	std::uint32_t wait_and_load(std::uint32_t value)
 	{
 		wait_count_.fetch_add(1, std::memory_order_relaxed);
-		// FIXME: Presuming a futex syscall is a full memory fence on its own.
-		// The threads that load the wait_count_ field must see it incremented
-		// as long as there is any chance the current thread might be sleeping
-		// on the futex. On the other hand within the futex system call, if the
-		// current thread is not sleeping yet, it should be able to observe a
-		// possible futex value update from other threads.
+		// FIXME: Presuming a futex syscall is a full memory fence
+		// on its own. The threads that load the wait_count_ field
+		// must see it incremented  as long as there is any chance
+		// the current thread might be sleeping on the futex. On the
+		// other hand within the futex system call, if the current
+		// thread is not sleeping yet, it should be able to observe
+		// a possible futex value update from other threads.
 		//
-		// If for some architecture (ARM? POWER?) this is not true, then an
-		// explicit memory fence should be added here.
-		futex_wait(ticket_, value);
+		// If for some architecture (ARM? POWER?) this is not true,
+		// then an explicit memory fence should be added here.
+		futex_wait(*this, value);
 		wait_count_.fetch_sub(1, std::memory_order_relaxed);
-		return Load();
+		return load();
 	}
 
-	void StoreAndWake(std::uint32_t value)
+	void store_and_wake(std::uint32_t value)
 	{
-		Store(value);
+		store(value);
 		std::atomic_thread_fence(std::memory_order_seq_cst);
 		if (wait_count_.load(std::memory_order_relaxed))
-			Wake();
+			wake();
 	}
 
-	void Wake()
+	void wake()
 	{
-		futex_wake(ticket_, INT32_MAX);
+		futex_wake(*this, INT32_MAX);
 	}
 
 private:
 	std::atomic<std::uint32_t> wait_count_ = ATOMIC_VAR_INIT(0);
 };
 
-template <typename Synch = DefaultSynch>
-class BoundedQueueSynchWait : public BoundedQueueSlotBase
+template <typename SynchT = DefaultSynch>
+class bounded_queue_synch : public bounded_queue_ticket
 {
 public:
-	std::uint32_t WaitAndLoad(std::uint32_t value)
+	using lock_type = typename SynchT::LockType;
+	using condvar_type = typename SynchT::CondVarType;
+
+	std::uint32_t wait_and_load(std::uint32_t value)
 	{
-		LockGuard<LockType> guard(lock_);
-		std::uint32_t current_value = ticket_.load(std::memory_order_relaxed);
+		LockGuard<lock_type> guard(lock_);
+		std::uint32_t current_value = base::load(std::memory_order_relaxed);
 		if (current_value == value) {
 			cond_.Wait(guard);
-			current_value = ticket_.load(std::memory_order_relaxed);
+			current_value = base::load(std::memory_order_relaxed);
 		}
 		return current_value;
 	}
 
-	void StoreAndWake(std::uint32_t value)
+	void store_and_wake(std::uint32_t value)
 	{
-		LockGuard<LockType> guard(lock_);
-		ticket_.store(value, std::memory_order_relaxed);
+		LockGuard<lock_type> guard(lock_);
+		base::store(value, std::memory_order_relaxed);
 		cond_.NotifyAll();
 	}
 
-	void Wake()
+	void wake()
 	{
-		LockGuard<LockType> guard(lock_);
+		LockGuard<lock_type> guard(lock_);
 		cond_.NotifyAll();
 	}
 
 private:
-	using LockType = typename Synch::LockType;
-	using CondVarType = typename Synch::CondVarType;
-
-	LockType lock_;
-	CondVarType cond_;
+	lock_type lock_;
+	condvar_type cond_;
 };
 
-template <typename ValueType, typename WaitType = BoundedQueueNoWait>
-class BoundedQueue
+template <typename Value, typename Ticket = bounded_queue_busywait>
+class bounded_queue
 {
 public:
-	BoundedQueue(std::uint32_t size)
+	bounded_queue(std::uint32_t size)
 		: ring_{nullptr}, mask_{size - 1}, finish_{false}, head_{0}, tail_{0}
 	{
 		if (size == 0 || (size & mask_) != 0)
 			throw std::invalid_argument("BoundedQueue size must be a power of two");
 
 		void *ring;
-		if (::posix_memalign(&ring, kCacheLineSize, size * sizeof(Slot)))
+		if (::posix_memalign(&ring, kCacheLineSize, size * sizeof(ring_slot)))
 			throw std::bad_alloc();
 
-		ring_ = new (ring) Slot[size];
+		ring_ = new (ring) ring_slot[size];
 		for (std::uint32_t i = 0; i < size; i++)
-			ring_[i].Initialize(i);
+			ring_[i].initialize(i);
 	}
 
-	BoundedQueue(BoundedQueue &&other) noexcept
+	bounded_queue(bounded_queue &&other) noexcept
 		: ring_{other.ring_}, mask_{other.mask_}, finish_{false}, head_{0}, tail_{0}
 	{
 		other.ring_ = nullptr;
 	}
 
-	BoundedQueue(BoundedQueue const &) = delete;
-	BoundedQueue &operator=(BoundedQueue const &) = delete;
+	bounded_queue(bounded_queue const &) = delete;
+	bounded_queue &operator=(bounded_queue const &) = delete;
 
-	~BoundedQueue()
+	~bounded_queue()
 	{
-		Destroy();
+		destroy();
 	}
 
-	bool Empty() const
+	bool empty() const
 	{
 		int64_t head = head_.load(std::memory_order_relaxed);
 		int64_t tail = tail_.load(std::memory_order_relaxed);
@@ -219,99 +219,99 @@ public:
 	{
 		finish_.store(true, std::memory_order_relaxed);
 		for (std::uint32_t i = 0; i < mask_ + 1; i++)
-			ring_[i].Wake();
+			ring_[i].wake();
 	}
 
 	template <typename... Backoff>
-	void Enqueue(ValueType &&value, Backoff... backoff)
+	void Enqueue(Value &&value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
-		Slot &slot = ring_[tail & mask_];
-		WaitTail(slot, tail, std::forward<Backoff>(backoff)...);
+		ring_slot &slot = ring_[tail & mask_];
+		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
 		slot.value = std::move(value);
-		WakeHead(slot, tail + 1);
+		wake_head(slot, tail + 1);
 	}
 
 	template <typename... Backoff>
-	void Enqueue(const ValueType &value, Backoff... backoff)
+	void Enqueue(const Value &value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
-		Slot &slot = ring_[tail & mask_];
-		WaitTail(slot, tail, std::forward<Backoff>(backoff)...);
+		ring_slot &slot = ring_[tail & mask_];
+		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
 		slot.value = value;
-		WakeHead(slot, tail + 1);
+		wake_head(slot, tail + 1);
 	}
 
 	template <typename... Backoff>
-	bool Dequeue(ValueType &value, Backoff... backoff)
+	bool Dequeue(Value &value, Backoff... backoff)
 	{
 		const std::uint64_t head = head_.fetch_add(1, std::memory_order_relaxed);
-		Slot &slot = ring_[head & mask_];
-		if (!WaitHead(slot, head + 1, std::forward<Backoff>(backoff)...))
+		ring_slot &slot = ring_[head & mask_];
+		if (!wait_head(slot, head + 1, std::forward<Backoff>(backoff)...))
 			return false;
 		value = std::move(slot.value);
-		WakeTail(slot, head + mask_ + 1);
+		wake_tail(slot, head + mask_ + 1);
 		return true;
 	}
 
 private:
-	struct alignas(kCacheLineSize) Slot : public WaitType
+	struct alignas(kCacheLineSize) ring_slot : public Ticket
 	{
-		ValueType value;
+		Value value;
 	};
 
-	void Destroy()
+	void destroy()
 	{
 		if (ring_ != nullptr) {
 			std::uint32_t size = mask_ + 1;
 			for (std::uint32_t i = 0; i < size; i++)
-				ring_[i].~Slot();
+				ring_[i].~ring_slot();
 			std::free(ring_);
 		}
 	}
 
-	void WaitTail(Slot &slot, std::uint64_t required_ticket)
+	void wait_tail(ring_slot &slot, std::uint64_t required_ticket)
 	{
-		std::uint32_t current_ticket = slot.Load();
+		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
-			current_ticket = slot.WaitAndLoad(current_ticket);
+			current_ticket = slot.wait_and_load(current_ticket);
 		}
 	}
 
 	template <typename Backoff>
-	void WaitTail(Slot &slot, std::uint64_t required_ticket, Backoff backoff)
+	void wait_tail(ring_slot &slot, std::uint64_t required_ticket, Backoff backoff)
 	{
 		bool waiting = false;
-		std::uint32_t current_ticket = slot.Load();
+		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
 			if (waiting) {
-				current_ticket = slot.WaitAndLoad(current_ticket);
+				current_ticket = slot.wait_and_load(current_ticket);
 			} else {
 				waiting = backoff();
-				current_ticket = slot.Load();
+				current_ticket = slot.load();
 			}
 		}
 	}
 
-	bool WaitHead(Slot &slot, std::uint64_t required_ticket)
+	bool wait_head(ring_slot &slot, std::uint64_t required_ticket)
 	{
-		std::uint32_t current_ticket = slot.Load();
+		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
 			if (Finished()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
 				if (required_ticket >= tail)
 					return false;
 			}
-			current_ticket = slot.WaitAndLoad(current_ticket);
+			current_ticket = slot.wait_and_load(current_ticket);
 		}
 		return true;
 	}
 
 	template <typename Backoff>
-	bool WaitHead(Slot &slot, std::uint64_t required_ticket, Backoff backoff)
+	bool wait_head(ring_slot &slot, std::uint64_t required_ticket, Backoff backoff)
 	{
 		bool waiting = false;
-		std::uint32_t current_ticket = slot.Load();
+		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
 			if (Finished()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
@@ -319,26 +319,26 @@ private:
 					return false;
 			}
 			if (waiting) {
-				current_ticket = slot.WaitAndLoad(current_ticket);
+				current_ticket = slot.wait_and_load(current_ticket);
 			} else {
 				waiting = backoff();
-				current_ticket = slot.Load();
+				current_ticket = slot.load();
 			}
 		}
 		return true;
 	}
 
-	void WakeHead(Slot &slot, std::uint32_t new_ticket)
+	void wake_head(ring_slot &slot, std::uint32_t new_ticket)
 	{
-		slot.StoreAndWake(new_ticket);
+		slot.store_and_wake(new_ticket);
 	}
 
-	void WakeTail(Slot &slot, std::uint32_t new_ticket)
+	void wake_tail(ring_slot &slot, std::uint32_t new_ticket)
 	{
-		slot.StoreAndWake(new_ticket);
+		slot.store_and_wake(new_ticket);
 	}
 
-	Slot *ring_;
+	ring_slot *ring_;
 	const std::uint32_t mask_;
 
 	std::atomic<bool> finish_;
@@ -348,7 +348,7 @@ private:
 };
 
 template <typename ValueType>
-using DefaultBoundedQueue = BoundedQueue<ValueType, BoundedQueueNoWait>;
+using default_bounded_queue = bounded_queue<ValueType, bounded_queue_busywait>;
 
 } // namespace evenk
 
