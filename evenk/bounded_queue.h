@@ -182,7 +182,7 @@ public:
 			throw std::invalid_argument("BoundedQueue size must be a power of two");
 
 		void *ring;
-		if (::posix_memalign(&ring, kCacheLineSize, size * sizeof(ring_slot)))
+		if (::posix_memalign(&ring, cache_line_size, size * sizeof(ring_slot)))
 			throw std::bad_alloc();
 
 		ring_ = new (ring) ring_slot[size];
@@ -256,7 +256,7 @@ public:
 	}
 
 private:
-	struct alignas(kCacheLineSize) ring_slot : public Ticket
+	struct alignas(cache_line_size) ring_slot : public Ticket
 	{
 		Value value;
 	};
@@ -344,8 +344,8 @@ private:
 
 	std::atomic<bool> finish_;
 
-	alignas(kCacheLineSize) std::atomic<std::uint64_t> head_;
-	alignas(kCacheLineSize) std::atomic<std::uint64_t> tail_;
+	alignas(cache_line_size) std::atomic<std::uint64_t> head_;
+	alignas(cache_line_size) std::atomic<std::uint64_t> tail_;
 };
 
 template <typename ValueType>

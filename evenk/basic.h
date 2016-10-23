@@ -29,7 +29,7 @@
 
 namespace evenk {
 
-constexpr std::size_t kCacheLineSize = 64;
+constexpr std::size_t cache_line_size = 64;
 
 } // namespace evenk
 
