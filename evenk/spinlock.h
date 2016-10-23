@@ -30,7 +30,6 @@
 #include "evenk/backoff.h"
 
 namespace evenk {
-namespace concurrency {
 
 class SpinLock
 {
@@ -108,7 +107,6 @@ private:
 	std::atomic<base_type> tail_ = ATOMIC_VAR_INIT(0);
 };
 
-} // namespace concurrency
 } // namespace evenk
 
 #endif // !EVENK_SPINLOCK_H_

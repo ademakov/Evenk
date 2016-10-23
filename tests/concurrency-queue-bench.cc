@@ -7,8 +7,6 @@
 #include <string>
 #include <vector>
 
-namespace evc = evenk::concurrency;
-
 template <typename Queue, typename... Backoff>
 void
 consume(Queue &queue, size_t &count, Backoff... backoff)
@@ -76,8 +74,8 @@ bench(unsigned nthreads)
 #define BENCH1(queue) bench(nthreads, #queue, queue)
 #define BENCH2(queue, backoff) bench(nthreads, #queue " " #backoff, queue, backoff)
 
-	evc::Queue<std::string, evc::StdSynch> std_queue;
-	evc::Queue<std::string, evc::PosixSynch> posix_queue;
+	evenk::Queue<std::string, evenk::StdSynch> std_queue;
+	evenk::Queue<std::string, evenk::PosixSynch> posix_queue;
 
 	BENCH1(std_queue);
 	BENCH1(posix_queue);
@@ -104,29 +102,29 @@ bench(unsigned nthreads)
 	}
 #endif
 
-	evc::BoundedQueue<std::string> bounded_queue(1024);
+	evenk::BoundedQueue<std::string> bounded_queue(1024);
 	BENCH1(bounded_queue);
 
-	evc::BoundedQueue<std::string, evc::BoundedQueueSynchWait<evc::StdSynch>>
+	evenk::BoundedQueue<std::string, evenk::BoundedQueueSynchWait<evenk::StdSynch>>
 		bounded_std_synch_queue(1024);
 	BENCH1(bounded_std_synch_queue);
 
 	{
-		evc::BoundedQueue<std::string, evc::BoundedQueueSynchWait<evc::StdSynch>>
+		evenk::BoundedQueue<std::string, evenk::BoundedQueueSynchWait<evenk::StdSynch>>
 			bounded_std_synch_queue(1024);
-		evc::LinearBackoff<evc::CPUCycle> linear_cycle_backoff(100000);
+		evenk::LinearBackoff<evenk::CPUCycle> linear_cycle_backoff(100000);
 		BENCH2(bounded_std_synch_queue, linear_cycle_backoff);
 	}
 	{
-		evc::BoundedQueue<std::string, evc::BoundedQueueSynchWait<evc::StdSynch>>
+		evenk::BoundedQueue<std::string, evenk::BoundedQueueSynchWait<evenk::StdSynch>>
 			bounded_std_synch_queue(1024);
-		evc::LinearBackoff<evc::CPURelax> linear_relax_backoff(100000);
+		evenk::LinearBackoff<evenk::CPURelax> linear_relax_backoff(100000);
 		BENCH2(bounded_std_synch_queue, linear_relax_backoff);
 	}
 	{
-		evc::BoundedQueue<std::string, evc::BoundedQueueSynchWait<evc::StdSynch>>
+		evenk::BoundedQueue<std::string, evenk::BoundedQueueSynchWait<evenk::StdSynch>>
 			bounded_std_synch_queue(1024);
-		evc::YieldBackoff yield_backoff;
+		evenk::YieldBackoff yield_backoff;
 		BENCH2(bounded_std_synch_queue, yield_backoff);
 	}
 
@@ -179,7 +177,8 @@ bench(unsigned nthreads)
 	}
 #endif
 
-	evc::BoundedQueue<std::string, evc::BoundedQueueYieldWait> bounded_yield_queue(1024);
+	evenk::BoundedQueue<std::string, evenk::BoundedQueueYieldWait> bounded_yield_queue(
+		1024);
 	BENCH1(bounded_yield_queue);
 
 	std::cout << "\n";

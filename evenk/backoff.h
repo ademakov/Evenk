@@ -33,7 +33,6 @@
 #include <time.h>
 
 namespace evenk {
-namespace concurrency {
 
 //
 // Delays for busy waiting.
@@ -182,7 +181,6 @@ private:
 	bool use_second_;
 };
 
-} // namespace concurrency
 } // namespace evenk
 
 #endif // !EVENK_BACKOFF_H_

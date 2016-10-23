@@ -37,7 +37,6 @@
 #include "evenk/futex.h"
 
 namespace evenk {
-namespace concurrency {
 
 //
 // Mutexes
@@ -130,7 +129,7 @@ public:
 	{
 		if (futex_.fetch_sub(1, std::memory_order_release) != 1) {
 			futex_.store(0, std::memory_order_relaxed);
-			evenk::futex_wake(futex_, 1);
+			futex_wake(futex_, 1);
 		}
 	}
 
@@ -303,7 +302,7 @@ public:
 
 		owner->Unlock();
 
-		evenk::futex_wait(futex_, value);
+		futex_wait(futex_, value);
 
 		count_.fetch_sub(1, std::memory_order_relaxed);
 		while (owner->futex_.exchange(2, std::memory_order_acquire))
@@ -314,7 +313,7 @@ public:
 	{
 		futex_.fetch_add(1, std::memory_order_acquire);
 		if (count_.load(std::memory_order_relaxed))
-			evenk::futex_wake(futex_, 1);
+			futex_wake(futex_, 1);
 	}
 
 	void NotifyAll()
@@ -323,10 +322,10 @@ public:
 		if (count_.load(std::memory_order_relaxed)) {
 			FutexLock *owner = owner_.load(std::memory_order_relaxed);
 			if (owner)
-				evenk::futex_requeue(futex_,
-						     1,
-						     std::numeric_limits<int>::max(),
-						     owner->futex_);
+				futex_requeue(futex_,
+					      1,
+					      std::numeric_limits<int>::max(),
+					      owner->futex_);
 		}
 	}
 
@@ -367,7 +366,6 @@ using DefaultSynch = FutexSynch;
 using DefaultSynch = StdSynch;
 #endif
 
-} // namespace concurrency
 } // namespace evenk
 
 #endif // !EVENK_SYNCH_H_

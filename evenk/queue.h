@@ -30,7 +30,6 @@
 #include "evenk/synch.h"
 
 namespace evenk {
-namespace concurrency {
 
 template <typename ValueType,
 	  typename SynchPolicy = DefaultSynch,
@@ -105,7 +104,6 @@ private:
 	Sequence queue_;
 };
 
-} // namespace concurrency
 } // namespace evenk
 
 #endif // !EVENK_QUEUE_H_

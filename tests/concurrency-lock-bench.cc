@@ -6,32 +6,30 @@
 #include <string>
 #include <vector>
 
-namespace evc = evenk::concurrency;
+evenk::StdMutex mutex;
+evenk::PosixMutex posix_mutex;
+evenk::SpinLock spin_lock;
+evenk::TicketLock ticket_lock;
+evenk::FutexLock futex_lock;
 
-evc::StdMutex mutex;
-evc::PosixMutex posix_mutex;
-evc::SpinLock spin_lock;
-evc::TicketLock ticket_lock;
-evc::FutexLock futex_lock;
+evenk::NoBackoff no_backoff;
+evenk::YieldBackoff yield_backoff;
 
-evc::NoBackoff no_backoff;
-evc::YieldBackoff yield_backoff;
+evenk::LinearBackoff<evenk::CPUCycle> linear_cycle_backoff(40);
+evenk::ExponentialBackoff<evenk::CPUCycle> exponential_cycle_backoff(40);
+evenk::ProportionalBackoff<evenk::CPUCycle> proportional_cycle_backoff(40);
 
-evc::LinearBackoff<evc::CPUCycle> linear_cycle_backoff(40);
-evc::ExponentialBackoff<evc::CPUCycle> exponential_cycle_backoff(40);
-evc::ProportionalBackoff<evc::CPUCycle> proportional_cycle_backoff(40);
+evenk::LinearBackoff<evenk::CPURelax> linear_relax_backoff(5);
+evenk::ExponentialBackoff<evenk::CPURelax> exponential_relax_backoff(5);
+evenk::ProportionalBackoff<evenk::CPURelax> proportional_relax_backoff(5);
 
-evc::LinearBackoff<evc::CPURelax> linear_relax_backoff(5);
-evc::ExponentialBackoff<evc::CPURelax> exponential_relax_backoff(5);
-evc::ProportionalBackoff<evc::CPURelax> proportional_relax_backoff(5);
+evenk::LinearBackoff<evenk::NanoSleep> linear_sleep_backoff(10);
+evenk::ExponentialBackoff<evenk::NanoSleep> exponential_sleep_backoff(10);
+evenk::ProportionalBackoff<evenk::NanoSleep> proportional_sleep_backoff(10);
 
-evc::LinearBackoff<evc::NanoSleep> linear_sleep_backoff(10);
-evc::ExponentialBackoff<evc::NanoSleep> exponential_sleep_backoff(10);
-evc::ProportionalBackoff<evc::NanoSleep> proportional_sleep_backoff(10);
-
-evc::CompositeBackoff<evc::LinearBackoff<evc::CPUCycle>, evc::YieldBackoff>
+evenk::CompositeBackoff<evenk::LinearBackoff<evenk::CPUCycle>, evenk::YieldBackoff>
 	cycle_yield_backoff(linear_cycle_backoff, yield_backoff);
-evc::CompositeBackoff<evc::LinearBackoff<evc::CPURelax>, evc::YieldBackoff>
+evenk::CompositeBackoff<evenk::LinearBackoff<evenk::CPURelax>, evenk::YieldBackoff>
 	relax_yield_backoff(linear_relax_backoff, yield_backoff);
 
 template <typename Lock, typename... Backoff>
@@ -40,10 +38,10 @@ spin(int &count, Lock &lock, Backoff... backoff)
 {
 	for (int i = 0; i < 100 * 1000; ++i) {
 		lock.Lock(backoff...);
-		evc::CPUCycle{}(1000);
+		evenk::CPUCycle{}(1000);
 		++count;
 		lock.Unlock();
-		evc::CPUCycle{}(5000);
+		evenk::CPUCycle{}(5000);
 	}
 }
 
