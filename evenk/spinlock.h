@@ -41,7 +41,7 @@ public:
 
 	void lock()
 	{
-		lock(NoBackoff{});
+		lock(no_backoff{});
 	}
 
 	template <typename Backoff>
@@ -70,7 +70,7 @@ public:
 
 	void lock()
 	{
-		lock(NoBackoff{});
+		lock(no_backoff{});
 	}
 
 	template <typename Backoff>
@@ -86,7 +86,7 @@ public:
 	}
 
 	template <typename Pause>
-	void lock(ProportionalBackoff<Pause> backoff)
+	void lock(proportional_backoff<Pause> backoff)
 	{
 		base_type tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		for (;;) {

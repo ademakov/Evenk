@@ -38,7 +38,7 @@ namespace evenk {
 // Delays for busy waiting.
 //
 
-struct CPUCycle
+struct cpu_cycle
 {
 	void operator()(std::uint32_t n)
 	{
@@ -47,7 +47,7 @@ struct CPUCycle
 	}
 };
 
-struct CPURelax
+struct cpu_relax
 {
 	void operator()(std::uint32_t n)
 	{
@@ -56,7 +56,7 @@ struct CPURelax
 	}
 };
 
-struct NanoSleep
+struct nanosleep
 {
 	void operator()(std::uint32_t n)
 	{
@@ -69,7 +69,7 @@ struct NanoSleep
 // Back-off policies for busy waiting.
 //
 
-class NoBackoff
+class no_backoff
 {
 public:
 	bool operator()()
@@ -78,7 +78,7 @@ public:
 	}
 };
 
-class YieldBackoff
+class yield_backoff
 {
 public:
 	bool operator()()
@@ -89,10 +89,10 @@ public:
 };
 
 template <typename Pause>
-class LinearBackoff
+class linear_backoff
 {
 public:
-	LinearBackoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
+	linear_backoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
 	{
 	}
 
@@ -114,10 +114,10 @@ private:
 };
 
 template <typename Pause>
-class ExponentialBackoff
+class exponential_backoff
 {
 public:
-	ExponentialBackoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
+	exponential_backoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
 	{
 	}
 
@@ -140,10 +140,10 @@ private:
 };
 
 template <typename Pause>
-class ProportionalBackoff
+class proportional_backoff
 {
 public:
-	ProportionalBackoff(std::uint32_t backoff) noexcept : backoff_{backoff}
+	proportional_backoff(std::uint32_t backoff) noexcept : backoff_{backoff}
 	{
 	}
 
@@ -159,10 +159,10 @@ private:
 };
 
 template <typename FirstBackoff, typename SecondBackoff>
-class CompositeBackoff
+class composite_backoff
 {
 public:
-	CompositeBackoff(FirstBackoff a, SecondBackoff b) noexcept
+	composite_backoff(FirstBackoff a, SecondBackoff b) noexcept
 		: first_(a), second_(b), use_second_{false}
 	{
 	}

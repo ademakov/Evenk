@@ -91,7 +91,7 @@ public:
 
 	void lock()
 	{
-		lock(NoBackoff{});
+		lock(no_backoff{});
 	}
 
 	template <typename Backoff>
