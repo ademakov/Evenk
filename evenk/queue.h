@@ -31,61 +31,63 @@
 
 namespace evenk {
 
-template <typename ValueType,
-	  typename SynchPolicy = DefaultSynch,
-	  typename Sequence = std::deque<ValueType>>
-class Queue
+template <typename Value, typename Synch = DefaultSynch, typename Sequence = std::deque<Value>>
+class queue
 {
 public:
-	Queue() noexcept : finish_(false)
+	using lock_type = typename Synch::LockType;
+	using condvar_type = typename Synch::CondVarType;
+	using sequence_type = Sequence;
+
+	queue() noexcept : finish_(false)
 	{
 	}
 
-	Queue(Queue &&other) noexcept : finish_(other.finish_)
+	queue(queue &&other) noexcept : finish_(other.finish_)
 	{
 		std::swap(queue_, other.queue_);
 	}
 
-	bool Empty() const
+	bool empty() const
 	{
-		LockGuard<LockType> guard(lock_);
+		LockGuard<lock_type> guard(lock_);
 		return queue_.empty();
 	}
 
-	bool Finished() const
+	bool finished() const
 	{
 		return finish_;
 	}
 
-	void Finish()
+	void finish()
 	{
-		LockGuard<LockType> guard(lock_);
+		LockGuard<lock_type> guard(lock_);
 		finish_ = true;
 		cond_.NotifyAll();
 	}
 
 	template <typename... Backoff>
-	void Enqueue(ValueType &&data, Backoff... backoff)
+	void enqueue(Value &&data, Backoff... backoff)
 	{
-		LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
+		LockGuard<lock_type> guard(lock_, std::forward<Backoff>(backoff)...);
 		queue_.push_back(std::move(data));
 		cond_.NotifyOne();
 	}
 
 	template <typename... Backoff>
-	void Enqueue(const ValueType &data, Backoff... backoff)
+	void enqueue(const Value &data, Backoff... backoff)
 	{
-		LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
+		LockGuard<lock_type> guard(lock_, std::forward<Backoff>(backoff)...);
 		queue_.push_back(data);
 		cond_.NotifyOne();
 	}
 
 	template <typename... Backoff>
-	bool Dequeue(ValueType &data, Backoff... backoff)
+	bool dequeue(Value &data, Backoff... backoff)
 	{
-		LockGuard<LockType> guard(lock_, std::forward<Backoff>(backoff)...);
+		LockGuard<lock_type> guard(lock_, std::forward<Backoff>(backoff)...);
 		while (queue_.empty()) {
-			if (Finished())
+			if (finished())
 				return false;
 			cond_.Wait(guard);
 		}
@@ -95,13 +97,10 @@ public:
 	}
 
 private:
-	using LockType = typename SynchPolicy::LockType;
-	using CondVarType = typename SynchPolicy::CondVarType;
-
 	bool finish_;
-	LockType lock_;
-	CondVarType cond_;
-	Sequence queue_;
+	lock_type lock_;
+	condvar_type cond_;
+	sequence_type queue_;
 };
 
 } // namespace evenk

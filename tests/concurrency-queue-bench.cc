@@ -14,7 +14,7 @@ void
 consume(Queue &queue, size_t &count, Backoff... backoff)
 {
 	std::string data;
-	while (queue.Dequeue(data, backoff...)) {
+	while (queue.dequeue(data, backoff...)) {
 		++count;
 	}
 }
@@ -25,7 +25,7 @@ produce(Queue &queue, int count, Backoff... backoff)
 {
 	std::string data = "this is a test string";
 	for (int i = 0; i < count; i++) {
-		queue.Enqueue(data, backoff...);
+		queue.enqueue(data, backoff...);
 	}
 }
 
@@ -47,7 +47,7 @@ bench(unsigned nthreads, const std::string &name, Queue &queue, Backoff... backo
 #define TOTAL (250 * 1000)
 
 	produce(queue, TOTAL, backoff...);
-	queue.Finish();
+	queue.finish();
 
 	for (auto &t : threads)
 		t.join();
@@ -76,29 +76,29 @@ bench(unsigned nthreads)
 #define BENCH1(queue) bench(nthreads, #queue, queue)
 #define BENCH2(queue, backoff) bench(nthreads, #queue " " #backoff, queue, backoff)
 
-	Queue<std::string, StdSynch> std_queue;
-	Queue<std::string, PosixSynch> posix_queue;
+	queue<std::string, StdSynch> std_queue;
+	queue<std::string, PosixSynch> posix_queue;
 
 	BENCH1(std_queue);
 	BENCH1(posix_queue);
 
 #if __linux__
 	{
-		Queue<std::string, FutexSynch> futex_queue;
+		queue<std::string, FutexSynch> futex_queue;
 		BENCH1(futex_queue);
 	}
 	{
-		Queue<std::string, FutexSynch> futex_queue;
+		queue<std::string, FutexSynch> futex_queue;
 		LinearBackoff<CPUCycle> linear_cycle_backoff(100000);
 		BENCH2(futex_queue, linear_cycle_backoff);
 	}
 	{
-		Queue<std::string, FutexSynch> futex_queue;
+		queue<std::string, FutexSynch> futex_queue;
 		LinearBackoff<CPURelax> linear_relax_backoff(100000);
 		BENCH2(futex_queue, linear_relax_backoff);
 	}
 	{
-		Queue<std::string, FutexSynch> futex_queue;
+		queue<std::string, FutexSynch> futex_queue;
 		YieldBackoff yield_backoff;
 		BENCH2(futex_queue, yield_backoff);
 	}

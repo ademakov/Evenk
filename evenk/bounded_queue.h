@@ -134,12 +134,12 @@ private:
 	std::atomic<std::uint32_t> wait_count_ = ATOMIC_VAR_INIT(0);
 };
 
-template <typename SynchT = DefaultSynch>
+template <typename Synch = DefaultSynch>
 class bounded_queue_synch : public bounded_queue_ticket
 {
 public:
-	using lock_type = typename SynchT::LockType;
-	using condvar_type = typename SynchT::CondVarType;
+	using lock_type = typename Synch::LockType;
+	using condvar_type = typename Synch::CondVarType;
 
 	std::uint32_t wait_and_load(std::uint32_t value)
 	{
@@ -210,12 +210,12 @@ public:
 		return (tail <= head);
 	}
 
-	bool Finished() const
+	bool finished() const
 	{
 		return finish_.load(std::memory_order_relaxed);
 	}
 
-	void Finish()
+	void finish()
 	{
 		finish_.store(true, std::memory_order_relaxed);
 		for (std::uint32_t i = 0; i < mask_ + 1; i++)
@@ -223,7 +223,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	void Enqueue(Value &&value, Backoff... backoff)
+	void enqueue(Value &&value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
 		ring_slot &slot = ring_[tail & mask_];
@@ -233,7 +233,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	void Enqueue(const Value &value, Backoff... backoff)
+	void enqueue(const Value &value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
 		ring_slot &slot = ring_[tail & mask_];
@@ -243,7 +243,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	bool Dequeue(Value &value, Backoff... backoff)
+	bool dequeue(Value &value, Backoff... backoff)
 	{
 		const std::uint64_t head = head_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[head & mask_];
@@ -297,7 +297,7 @@ private:
 	{
 		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
-			if (Finished()) {
+			if (finished()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
 				if (required_ticket >= tail)
 					return false;
@@ -313,7 +313,7 @@ private:
 		bool waiting = false;
 		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
-			if (Finished()) {
+			if (finished()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
 				if (required_ticket >= tail)
 					return false;
