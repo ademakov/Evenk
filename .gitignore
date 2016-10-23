@@ -27,6 +27,7 @@ Makefile.in
 *.lo
 *.o
 *.obj
+*.dSYM
 
 # Precompiled Headers
 *.gch
@@ -36,9 +37,6 @@ Makefile.in
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
 
 # Compiled Static libraries
 *.lai
