@@ -6,11 +6,11 @@
 #include <string>
 #include <vector>
 
-evenk::StdMutex mutex;
-evenk::PosixMutex posix_mutex;
-evenk::SpinLock spin_lock;
-evenk::TicketLock ticket_lock;
-evenk::FutexLock futex_lock;
+std::mutex mutex;
+evenk::posix_mutex posix_mutex;
+evenk::spin_lock spin_lock;
+evenk::ticket_lock ticket_lock;
+evenk::futex_lock futex_lock;
 
 evenk::NoBackoff no_backoff;
 evenk::YieldBackoff yield_backoff;
@@ -37,10 +37,10 @@ void
 spin(int &count, Lock &lock, Backoff... backoff)
 {
 	for (int i = 0; i < 100 * 1000; ++i) {
-		lock.Lock(backoff...);
+		lock.lock(backoff...);
 		evenk::CPUCycle{}(1000);
 		++count;
-		lock.Unlock();
+		lock.unlock();
 		evenk::CPUCycle{}(5000);
 	}
 }

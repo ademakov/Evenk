@@ -1,7 +1,7 @@
 //
 // Synchronization Primitives
 //
-// Copyright (c) 2015  Aleksey Demakov
+// Copyright (c) 2015-2016  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -42,35 +42,22 @@ namespace evenk {
 // Mutexes
 //
 
-class StdMutex : public std::mutex
+class posix_mutex
 {
 public:
-	void Lock()
-	{
-		lock();
-	}
-	void Unlock()
-	{
-		unlock();
-	}
-};
-
-class PosixMutex
-{
-public:
-	PosixMutex() noexcept : mutex_(PTHREAD_MUTEX_INITIALIZER)
+	posix_mutex() noexcept : mutex_(PTHREAD_MUTEX_INITIALIZER)
 	{
 	}
 
-	PosixMutex(const PosixMutex &) = delete;
-	PosixMutex &operator=(const PosixMutex &) = delete;
+	posix_mutex(const posix_mutex &) = delete;
+	posix_mutex &operator=(const posix_mutex &) = delete;
 
-	~PosixMutex() noexcept
+	~posix_mutex() noexcept
 	{
 		pthread_mutex_destroy(&mutex_);
 	}
 
-	void Lock()
+	void lock()
 	{
 		int ret = pthread_mutex_lock(&mutex_);
 		if (ret)
@@ -78,7 +65,7 @@ public:
 				ret, std::system_category(), "pthread_mutex_lock()");
 	}
 
-	void Unlock()
+	void unlock()
 	{
 		int ret = pthread_mutex_unlock(&mutex_);
 		if (ret)
@@ -87,28 +74,28 @@ public:
 	}
 
 private:
-	friend class PosixCondVar;
+	friend class posix_cond_var;
 
 	pthread_mutex_t mutex_;
 };
 
-class FutexLock
+class futex_lock
 {
 public:
-	FutexLock() noexcept : futex_(0)
+	futex_lock() noexcept : futex_(0)
 	{
 	}
 
-	FutexLock(const FutexLock &) = delete;
-	FutexLock &operator=(const FutexLock &) = delete;
+	futex_lock(const futex_lock &) = delete;
+	futex_lock &operator=(const futex_lock &) = delete;
 
-	void Lock()
+	void lock()
 	{
-		Lock(NoBackoff{});
+		lock(NoBackoff{});
 	}
 
 	template <typename Backoff>
-	void Lock(Backoff backoff)
+	void lock(Backoff backoff)
 	{
 		for (std::uint32_t value = 0; !futex_.compare_exchange_strong(
 			     value, 1, std::memory_order_acquire, std::memory_order_relaxed);
@@ -125,7 +112,7 @@ public:
 		}
 	}
 
-	void Unlock()
+	void unlock()
 	{
 		if (futex_.fetch_sub(1, std::memory_order_release) != 1) {
 			futex_.store(0, std::memory_order_relaxed);
@@ -134,7 +121,7 @@ public:
 	}
 
 private:
-	friend class FutexCondVar;
+	friend class futex_cond_var;
 
 	std::atomic<std::uint32_t> futex_;
 };
@@ -144,64 +131,64 @@ private:
 //
 
 template <typename LockType>
-class LockGuard
+class lock_guard
 {
 public:
-	LockGuard(LockType &lock) : lock_ptr_(&lock), owns_lock_(false)
+	lock_guard(LockType &a_lock) : lock_ptr_(&a_lock), owns_lock_(false)
 	{
-		Lock();
+		lock();
 	}
 
 	template <typename Backoff>
-	LockGuard(LockType &lock, Backoff backoff) : lock_ptr_(&lock), owns_lock_(false)
+	lock_guard(LockType &a_lock, Backoff backoff) : lock_ptr_(&a_lock), owns_lock_(false)
 	{
-		Lock(backoff);
+		lock(backoff);
 	}
 
-	LockGuard(LockType &lock, std::adopt_lock_t) noexcept
-		: lock_ptr_(&lock), owns_lock_(true)
-	{
-	}
-
-	LockGuard(LockType &lock, std::defer_lock_t) noexcept
-		: lock_ptr_(&lock), owns_lock_(false)
+	lock_guard(LockType &a_lock, std::adopt_lock_t) noexcept
+		: lock_ptr_(&a_lock), owns_lock_(true)
 	{
 	}
 
-	LockGuard(const LockGuard &) = delete;
-	LockGuard &operator=(const LockGuard &) = delete;
+	lock_guard(LockType &a_lock, std::defer_lock_t) noexcept
+		: lock_ptr_(&a_lock), owns_lock_(false)
+	{
+	}
 
-	~LockGuard()
+	lock_guard(const lock_guard &) = delete;
+	lock_guard &operator=(const lock_guard &) = delete;
+
+	~lock_guard()
 	{
 		if (owns_lock_)
-			lock_ptr_->Unlock();
+			lock_ptr_->unlock();
 	}
 
-	void Lock()
+	void lock()
 	{
-		lock_ptr_->Lock();
+		lock_ptr_->lock();
 		owns_lock_ = true;
 	}
 
 	template <typename Backoff>
-	void Lock(Backoff backoff)
+	void lock(Backoff backoff)
 	{
-		lock_ptr_->Lock(backoff);
+		lock_ptr_->lock(backoff);
 		owns_lock_ = true;
 	}
 
-	void Unlock()
+	void unlock()
 	{
-		lock_ptr_->Unlock();
+		lock_ptr_->unlock();
 		owns_lock_ = false;
 	}
 
-	LockType *GetLockPtr()
+	LockType *get()
 	{
 		return lock_ptr_;
 	}
 
-	bool OwnsLock()
+	bool owns_lock()
 	{
 		return owns_lock_;
 	}
@@ -215,50 +202,30 @@ private:
 // Condition Variables
 //
 
-class StdCondVar : public std::condition_variable
+class posix_cond_var
 {
 public:
-	void Wait(LockGuard<StdMutex> &guard)
-	{
-		std::unique_lock<std::mutex> lock(*guard.GetLockPtr(), std::adopt_lock);
-		wait(lock);
-		lock.release();
-	}
-
-	void NotifyOne()
-	{
-		notify_one();
-	}
-	void NotifyAll()
-	{
-		notify_all();
-	}
-};
-
-class PosixCondVar
-{
-public:
-	PosixCondVar() noexcept : condition_(PTHREAD_COND_INITIALIZER)
+	posix_cond_var() noexcept : condition_(PTHREAD_COND_INITIALIZER)
 	{
 	}
 
-	PosixCondVar(const PosixCondVar &) = delete;
-	PosixCondVar &operator=(const PosixCondVar &) = delete;
+	posix_cond_var(const posix_cond_var &) = delete;
+	posix_cond_var &operator=(const posix_cond_var &) = delete;
 
-	~PosixCondVar() noexcept
+	~posix_cond_var() noexcept
 	{
 		pthread_cond_destroy(&condition_);
 	}
 
-	void Wait(LockGuard<PosixMutex> &guard)
+	void wait(std::unique_lock<posix_mutex> &ulock)
 	{
-		int ret = pthread_cond_wait(&condition_, &guard.GetLockPtr()->mutex_);
+		int ret = pthread_cond_wait(&condition_, &ulock.mutex()->mutex_);
 		if (ret)
 			throw std::system_error(
 				ret, std::system_category(), "pthread_cond_wait()");
 	}
 
-	void NotifyOne()
+	void notify_one()
 	{
 		int ret = pthread_cond_signal(&condition_);
 		if (ret)
@@ -266,7 +233,7 @@ public:
 				ret, std::system_category(), "pthread_cond_signal()");
 	}
 
-	void NotifyAll()
+	void notify_all()
 	{
 		int ret = pthread_cond_broadcast(&condition_);
 		if (ret)
@@ -278,19 +245,19 @@ private:
 	pthread_cond_t condition_;
 };
 
-class FutexCondVar
+class futex_cond_var
 {
 public:
-	FutexCondVar() noexcept : futex_(0), count_(0), owner_(nullptr)
+	futex_cond_var() noexcept : futex_(0), count_(0), owner_(nullptr)
 	{
 	}
 
-	FutexCondVar(const FutexCondVar &) = delete;
-	FutexCondVar &operator=(const FutexCondVar &) = delete;
+	futex_cond_var(const futex_cond_var &) = delete;
+	futex_cond_var &operator=(const futex_cond_var &) = delete;
 
-	void Wait(LockGuard<FutexLock> &guard)
+	void wait(lock_guard<futex_lock> &guard)
 	{
-		FutexLock *owner = guard.GetLockPtr();
+		futex_lock *owner = guard.get();
 		if (owner_ != nullptr && owner_ != owner)
 			throw std::invalid_argument(
 				"different locks used for the same condition variable.");
@@ -300,7 +267,7 @@ public:
 		std::atomic_thread_fence(std::memory_order_acq_rel);
 		std::uint32_t value = futex_.load(std::memory_order_relaxed);
 
-		owner->Unlock();
+		owner->unlock();
 
 		futex_wait(futex_, value);
 
@@ -309,18 +276,18 @@ public:
 			futex_wait(owner->futex_, 2);
 	}
 
-	void NotifyOne()
+	void notify_one()
 	{
 		futex_.fetch_add(1, std::memory_order_acquire);
 		if (count_.load(std::memory_order_relaxed))
 			futex_wake(futex_, 1);
 	}
 
-	void NotifyAll()
+	void notify_all()
 	{
 		futex_.fetch_add(1, std::memory_order_acquire);
 		if (count_.load(std::memory_order_relaxed)) {
-			FutexLock *owner = owner_.load(std::memory_order_relaxed);
+			futex_lock *owner = owner_.load(std::memory_order_relaxed);
 			if (owner)
 				futex_requeue(futex_,
 					      1,
@@ -332,38 +299,41 @@ public:
 private:
 	std::atomic<std::uint32_t> futex_;
 	std::atomic<std::uint32_t> count_;
-	std::atomic<FutexLock *> owner_;
+	std::atomic<futex_lock *> owner_;
 };
 
 //
 // Synchronization Traits
 //
 
-class StdSynch
+class std_synch
 {
 public:
-	using LockType = StdMutex;
-	using CondVarType = StdCondVar;
+	using lock_type = std::mutex;
+	using cond_var_type = std::condition_variable;
+	using lock_owner_type = std::unique_lock<std::mutex>;
 };
 
-class PosixSynch
+class posix_synch
 {
 public:
-	using LockType = PosixMutex;
-	using CondVarType = PosixCondVar;
+	using lock_type = posix_mutex;
+	using cond_var_type = posix_cond_var;
+	using lock_owner_type = std::unique_lock<posix_mutex>;
 };
 
-class FutexSynch
+class futex_synch
 {
 public:
-	using LockType = FutexLock;
-	using CondVarType = FutexCondVar;
+	using lock_type = futex_lock;
+	using cond_var_type = futex_cond_var;
+	using lock_owner_type = lock_guard<futex_lock>;
 };
 
 #if __linux__
-using DefaultSynch = FutexSynch;
+using default_synch = futex_synch;
 #else
-using DefaultSynch = StdSynch;
+using default_synch = std_synch;
 #endif
 
 } // namespace evenk

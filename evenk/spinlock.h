@@ -31,26 +31,27 @@
 
 namespace evenk {
 
-class SpinLock
+class spin_lock
 {
 public:
-	SpinLock() = default;
-	SpinLock(const SpinLock &) = delete;
-	SpinLock &operator=(const SpinLock &) = delete;
+	spin_lock() = default;
 
-	void Lock()
+	spin_lock(const spin_lock &) = delete;
+	spin_lock &operator=(const spin_lock &) = delete;
+
+	void lock()
 	{
-		Lock(NoBackoff{});
+		lock(NoBackoff{});
 	}
 
 	template <typename Backoff>
-	void Lock(Backoff backoff) noexcept
+	void lock(Backoff backoff) noexcept
 	{
 		while (lock_.test_and_set(std::memory_order_acquire))
 			backoff();
 	}
 
-	void Unlock()
+	void unlock()
 	{
 		lock_.clear(std::memory_order_release);
 	}
@@ -59,20 +60,21 @@ private:
 	std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
 };
 
-class TicketLock
+class ticket_lock
 {
 public:
-	TicketLock() = default;
-	TicketLock(const TicketLock &) = delete;
-	TicketLock &operator=(const TicketLock &) = delete;
+	ticket_lock() = default;
 
-	void Lock()
+	ticket_lock(const ticket_lock &) = delete;
+	ticket_lock &operator=(const ticket_lock &) = delete;
+
+	void lock()
 	{
-		Lock(NoBackoff{});
+		lock(NoBackoff{});
 	}
 
 	template <typename Backoff>
-	void Lock(Backoff backoff)
+	void lock(Backoff backoff)
 	{
 		base_type tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		for (;;) {
@@ -84,7 +86,7 @@ public:
 	}
 
 	template <typename Pause>
-	void Lock(ProportionalBackoff<Pause> backoff)
+	void lock(ProportionalBackoff<Pause> backoff)
 	{
 		base_type tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		for (;;) {
@@ -95,7 +97,7 @@ public:
 		}
 	}
 
-	void Unlock()
+	void unlock()
 	{
 		head_.fetch_add(1, std::memory_order_release);
 	}

@@ -31,12 +31,14 @@
 
 namespace evenk {
 
-template <typename Value, typename Synch = DefaultSynch, typename Sequence = std::deque<Value>>
+template <typename Value, typename Synch = default_synch, typename Sequence = std::deque<Value>>
 class queue
 {
 public:
-	using lock_type = typename Synch::LockType;
-	using condvar_type = typename Synch::CondVarType;
+	using lock_type = typename Synch::lock_type;
+	using cond_var_type = typename Synch::cond_var_type;
+	using lock_owner_type = typename Synch::lock_owner_type;
+
 	using sequence_type = Sequence;
 
 	queue() noexcept : finish_(false)
@@ -50,7 +52,7 @@ public:
 
 	bool empty() const
 	{
-		LockGuard<lock_type> guard(lock_);
+		lock_owner_type guard(lock_);
 		return queue_.empty();
 	}
 
@@ -61,35 +63,35 @@ public:
 
 	void finish()
 	{
-		LockGuard<lock_type> guard(lock_);
+		lock_owner_type guard(lock_);
 		finish_ = true;
-		cond_.NotifyAll();
+		cond_.notify_all();
 	}
 
 	template <typename... Backoff>
 	void enqueue(Value &&data, Backoff... backoff)
 	{
-		LockGuard<lock_type> guard(lock_, std::forward<Backoff>(backoff)...);
+		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		queue_.push_back(std::move(data));
-		cond_.NotifyOne();
+		cond_.notify_one();
 	}
 
 	template <typename... Backoff>
 	void enqueue(const Value &data, Backoff... backoff)
 	{
-		LockGuard<lock_type> guard(lock_, std::forward<Backoff>(backoff)...);
+		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		queue_.push_back(data);
-		cond_.NotifyOne();
+		cond_.notify_one();
 	}
 
 	template <typename... Backoff>
 	bool dequeue(Value &data, Backoff... backoff)
 	{
-		LockGuard<lock_type> guard(lock_, std::forward<Backoff>(backoff)...);
+		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		while (queue_.empty()) {
 			if (finished())
 				return false;
-			cond_.Wait(guard);
+			cond_.wait(guard);
 		}
 		data = std::move(queue_.front());
 		queue_.pop_front();
@@ -99,7 +101,7 @@ public:
 private:
 	bool finish_;
 	lock_type lock_;
-	condvar_type cond_;
+	cond_var_type cond_;
 	sequence_type queue_;
 };
 

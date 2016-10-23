@@ -134,19 +134,20 @@ private:
 	std::atomic<std::uint32_t> wait_count_ = ATOMIC_VAR_INIT(0);
 };
 
-template <typename Synch = DefaultSynch>
+template <typename Synch = default_synch>
 class bounded_queue_synch : public bounded_queue_ticket
 {
 public:
-	using lock_type = typename Synch::LockType;
-	using condvar_type = typename Synch::CondVarType;
+	using lock_type = typename Synch::lock_type;
+	using cond_var_type = typename Synch::cond_var_type;
+	using lock_owner_type = typename Synch::lock_owner_type;
 
 	std::uint32_t wait_and_load(std::uint32_t value)
 	{
-		LockGuard<lock_type> guard(lock_);
+		lock_owner_type guard(lock_);
 		std::uint32_t current_value = base::load(std::memory_order_relaxed);
 		if (current_value == value) {
-			cond_.Wait(guard);
+			cond_.wait(guard);
 			current_value = base::load(std::memory_order_relaxed);
 		}
 		return current_value;
@@ -154,20 +155,20 @@ public:
 
 	void store_and_wake(std::uint32_t value)
 	{
-		LockGuard<lock_type> guard(lock_);
+		lock_owner_type guard(lock_);
 		base::store(value, std::memory_order_relaxed);
-		cond_.NotifyAll();
+		cond_.notify_all();
 	}
 
 	void wake()
 	{
-		LockGuard<lock_type> guard(lock_);
-		cond_.NotifyAll();
+		lock_owner_type guard(lock_);
+		cond_.notify_all();
 	}
 
 private:
 	lock_type lock_;
-	condvar_type cond_;
+	cond_var_type cond_;
 };
 
 template <typename Value, typename Ticket = bounded_queue_busywait>
