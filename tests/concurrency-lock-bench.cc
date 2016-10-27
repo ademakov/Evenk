@@ -9,6 +9,7 @@
 std::mutex mutex;
 evenk::posix_mutex posix_mutex;
 evenk::spin_lock spin_lock;
+evenk::tatas_lock tatas_lock;
 evenk::ticket_lock ticket_lock;
 evenk::futex_lock futex_lock;
 
@@ -38,10 +39,10 @@ spin(int &count, Lock &lock, Backoff... backoff)
 {
 	for (int i = 0; i < 100 * 1000; ++i) {
 		lock.lock(backoff...);
-		evenk::cpu_relax{}(1000);
+		evenk::cpu_cycle{}(5000);
 		++count;
 		lock.unlock();
-		evenk::cpu_relax{}(5000);
+		evenk::cpu_cycle{}(5000);
 	}
 }
 
@@ -105,6 +106,20 @@ bench(unsigned nthreads)
 	BENCH2(spin_lock, linear_sleep_backoff);
 	BENCH2(spin_lock, exponential_sleep_backoff);
 	BENCH2(spin_lock, proportional_sleep_backoff);
+
+	BENCH2(tatas_lock, no_backoff);
+	BENCH2(tatas_lock, linear_cycle_backoff);
+	BENCH2(tatas_lock, exponential_cycle_backoff);
+	BENCH2(tatas_lock, proportional_cycle_backoff);
+	BENCH2(tatas_lock, linear_relax_backoff);
+	BENCH2(tatas_lock, exponential_relax_backoff);
+	BENCH2(tatas_lock, proportional_relax_backoff);
+	BENCH2(tatas_lock, yield_backoff);
+	BENCH2(tatas_lock, cycle_yield_backoff);
+	BENCH2(tatas_lock, relax_yield_backoff);
+	BENCH2(tatas_lock, linear_sleep_backoff);
+	BENCH2(tatas_lock, exponential_sleep_backoff);
+	BENCH2(tatas_lock, proportional_sleep_backoff);
 
 	BENCH2(ticket_lock, no_backoff);
 	BENCH2(ticket_lock, linear_cycle_backoff);
