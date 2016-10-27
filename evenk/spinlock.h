@@ -34,7 +34,7 @@ namespace evenk {
 class spin_lock
 {
 public:
-	spin_lock() = default;
+	constexpr spin_lock() noexcept = default;
 
 	spin_lock(const spin_lock &) = delete;
 	spin_lock &operator=(const spin_lock &) = delete;
@@ -51,6 +51,11 @@ public:
 			backoff();
 	}
 
+	bool try_lock()
+	{
+		return !lock_.test_and_set(std::memory_order_acquire);
+	}
+
 	void unlock()
 	{
 		lock_.clear(std::memory_order_release);
@@ -60,10 +65,47 @@ private:
 	std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
 };
 
+class tatas_lock
+{
+public:
+	constexpr tatas_lock() noexcept = default;
+
+	tatas_lock(const tatas_lock &) = delete;
+	tatas_lock &operator=(const tatas_lock &) = delete;
+
+	void lock()
+	{
+		lock(no_backoff{});
+	}
+
+	template <typename Backoff>
+	void lock(Backoff backoff) noexcept
+	{
+		while (lock_.exchange(true, std::memory_order_acquire)) {
+			do
+				backoff();
+			while (lock_.load(std::memory_order_relaxed));
+		}
+	}
+
+	bool try_lock()
+	{
+		return !lock_.exchange(true, std::memory_order_acquire);
+	}
+
+	void unlock()
+	{
+		lock_.store(false, std::memory_order_release);
+	}
+
+private:
+	std::atomic<bool> lock_ = ATOMIC_VAR_INIT(false);
+};
+
 class ticket_lock
 {
 public:
-	ticket_lock() = default;
+	constexpr ticket_lock() noexcept = default;
 
 	ticket_lock(const ticket_lock &) = delete;
 	ticket_lock &operator=(const ticket_lock &) = delete;
