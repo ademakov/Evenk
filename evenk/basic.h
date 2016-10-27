@@ -26,10 +26,29 @@
 #define EVENK_BASIC_H_
 
 #include <cstddef>
+#include <system_error>
 
 namespace evenk {
 
 constexpr std::size_t cache_line_size = 64;
+
+[[noreturn]] void
+throw_system_error(int err_num)
+{
+	throw std::system_error(err_num, std::system_category());
+}
+
+[[noreturn]] void
+throw_system_error(int err_num, const char *what)
+{
+	throw std::system_error(err_num, std::system_category(), what);
+}
+
+[[noreturn]] void
+throw_system_error(int err_num, const std::string &what)
+{
+	throw std::system_error(err_num, std::system_category(), what);
+}
 
 } // namespace evenk
 
