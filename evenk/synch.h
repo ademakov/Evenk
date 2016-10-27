@@ -94,9 +94,9 @@ private:
 class futex_lock
 {
 public:
-	futex_lock() noexcept : futex_(0)
-	{
-	}
+	using native_handle_type = futex_t &;
+
+	constexpr futex_lock() noexcept = default;
 
 	futex_lock(const futex_lock &) = delete;
 	futex_lock &operator=(const futex_lock &) = delete;
@@ -132,10 +132,13 @@ public:
 		}
 	}
 
-private:
-	friend class futex_cond_var;
+	native_handle_type native_handle()
+	{
+		return futex_;
+	}
 
-	std::atomic<std::uint32_t> futex_;
+private:
+	futex_t futex_ = ATOMIC_VAR_INIT(0);
 };
 
 //
@@ -262,9 +265,7 @@ private:
 class futex_cond_var
 {
 public:
-	futex_cond_var() noexcept : futex_(0), count_(0), owner_(nullptr)
-	{
-	}
+	constexpr futex_cond_var() noexcept = default;
 
 	futex_cond_var(const futex_cond_var &) = delete;
 	futex_cond_var &operator=(const futex_cond_var &) = delete;
@@ -285,9 +286,10 @@ public:
 
 		futex_wait(futex_, value);
 
+		futex_t &owner_futex = owner->native_handle();
 		count_.fetch_sub(1, std::memory_order_relaxed);
-		while (owner->futex_.exchange(2, std::memory_order_acquire))
-			futex_wait(owner->futex_, 2);
+		while (owner_futex.exchange(2, std::memory_order_acquire))
+			futex_wait(owner_futex, 2);
 	}
 
 	void notify_one()
@@ -302,18 +304,19 @@ public:
 		futex_.fetch_add(1, std::memory_order_acquire);
 		if (count_.load(std::memory_order_relaxed)) {
 			futex_lock *owner = owner_.load(std::memory_order_relaxed);
-			if (owner)
+			if (owner) {
 				futex_requeue(futex_,
 					      1,
 					      std::numeric_limits<int>::max(),
-					      owner->futex_);
+					      owner->native_handle());
+			}
 		}
 	}
 
 private:
-	std::atomic<std::uint32_t> futex_;
-	std::atomic<std::uint32_t> count_;
-	std::atomic<futex_lock *> owner_;
+	futex_t futex_ = ATOMIC_VAR_INIT(0);
+	futex_t count_ = ATOMIC_VAR_INIT(0);
+	std::atomic<futex_lock *> owner_ = ATOMIC_VAR_INIT(nullptr);
 };
 
 //
