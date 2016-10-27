@@ -37,9 +37,10 @@
 
 namespace evenk {
 
+typedef std::atomic<std::uint32_t> futex_t;
+
 inline int
-futex_wait(std::atomic<std::uint32_t> &futex __attribute__((unused)),
-	   std::uint32_t value __attribute__((unused)))
+futex_wait(futex_t &futex __attribute__((unused)), std::uint32_t value __attribute__((unused)))
 {
 #if __linux__
 #if __x86_64__
@@ -62,8 +63,7 @@ futex_wait(std::atomic<std::uint32_t> &futex __attribute__((unused)),
 }
 
 inline int
-futex_wake(std::atomic<std::uint32_t> &futex __attribute__((unused)),
-	   int count __attribute__((unused)))
+futex_wake(futex_t &futex __attribute__((unused)), int count __attribute__((unused)))
 {
 #if __linux__
 #if __x86_64__
@@ -85,10 +85,10 @@ futex_wake(std::atomic<std::uint32_t> &futex __attribute__((unused)),
 }
 
 inline int
-futex_requeue(std::atomic<std::uint32_t> &futex __attribute__((unused)),
+futex_requeue(futex_t &futex __attribute__((unused)),
 	      int futex_count __attribute__((unused)),
 	      int queue_count __attribute__((unused)),
-	      std::atomic<std::uint32_t> &queue __attribute__((unused)))
+	      futex_t &queue __attribute__((unused)))
 {
 #if __linux__
 #if __x86_64__
@@ -124,10 +124,10 @@ futex_requeue(std::atomic<std::uint32_t> &futex __attribute__((unused)),
 }
 
 inline int
-futex_requeue(std::atomic<std::uint32_t> &futex __attribute__((unused)),
+futex_requeue(futex_t &futex __attribute__((unused)),
 	      int futex_count __attribute__((unused)),
 	      int queue_count __attribute__((unused)),
-	      std::atomic<std::uint32_t> &queue __attribute__((unused)),
+	      futex_t &queue __attribute__((unused)),
 	      std::uint32_t futex_value __attribute__((unused)))
 {
 #if __linux__
