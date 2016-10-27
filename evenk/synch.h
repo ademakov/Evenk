@@ -45,6 +45,8 @@ namespace evenk {
 class posix_mutex
 {
 public:
+	using native_handle_type = pthread_mutex_t;
+
 	posix_mutex() noexcept : mutex_(PTHREAD_MUTEX_INITIALIZER)
 	{
 	}
@@ -64,11 +66,27 @@ public:
 			throw_system_error(ret, "pthread_mutex_lock()");
 	}
 
+	bool try_lock()
+	{
+		int ret = pthread_mutex_trylock(&mutex_);
+		if (ret) {
+			if (ret != EBUSY)
+				throw_system_error(ret, "pthread_mutex_trylock()");
+			return false;
+		}
+		return true;
+	}
+
 	void unlock()
 	{
 		int ret = pthread_mutex_unlock(&mutex_);
 		if (ret)
 			throw_system_error(ret, "pthread_mutex_unlock()");
+	}
+
+	native_handle_type native_handle()
+	{
+		return mutex_;
 	}
 
 private:
