@@ -28,12 +28,12 @@
 #include <condition_variable>
 #include <limits>
 #include <mutex>
-#include <system_error>
 #include <thread>
 
 #include <pthread.h>
 
 #include "evenk/backoff.h"
+#include "evenk/basic.h"
 #include "evenk/futex.h"
 
 namespace evenk {
@@ -61,16 +61,14 @@ public:
 	{
 		int ret = pthread_mutex_lock(&mutex_);
 		if (ret)
-			throw std::system_error(
-				ret, std::system_category(), "pthread_mutex_lock()");
+			throw_system_error(ret, "pthread_mutex_lock()");
 	}
 
 	void unlock()
 	{
 		int ret = pthread_mutex_unlock(&mutex_);
 		if (ret)
-			throw std::system_error(
-				ret, std::system_category(), "pthread_mutex_unlock()");
+			throw_system_error(ret, "pthread_mutex_unlock()");
 	}
 
 private:
@@ -221,24 +219,21 @@ public:
 	{
 		int ret = pthread_cond_wait(&condition_, &ulock.mutex()->mutex_);
 		if (ret)
-			throw std::system_error(
-				ret, std::system_category(), "pthread_cond_wait()");
+			throw_system_error(ret, "pthread_cond_wait()");
 	}
 
 	void notify_one()
 	{
 		int ret = pthread_cond_signal(&condition_);
 		if (ret)
-			throw std::system_error(
-				ret, std::system_category(), "pthread_cond_signal()");
+			throw_system_error(ret, "pthread_cond_signal()");
 	}
 
 	void notify_all()
 	{
 		int ret = pthread_cond_broadcast(&condition_);
 		if (ret)
-			throw std::system_error(
-				ret, std::system_category(), "pthread_cond_broadcast()");
+			throw_system_error(ret, "pthread_cond_broadcast()");
 	}
 
 private:
