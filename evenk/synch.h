@@ -45,11 +45,9 @@ namespace evenk {
 class posix_mutex
 {
 public:
-	using native_handle_type = pthread_mutex_t;
+	using native_handle_type = pthread_mutex_t *;
 
-	posix_mutex() noexcept : mutex_(PTHREAD_MUTEX_INITIALIZER)
-	{
-	}
+	constexpr posix_mutex() noexcept = default;
 
 	posix_mutex(const posix_mutex &) = delete;
 	posix_mutex &operator=(const posix_mutex &) = delete;
@@ -86,13 +84,11 @@ public:
 
 	native_handle_type native_handle()
 	{
-		return mutex_;
+		return &mutex_;
 	}
 
 private:
-	friend class posix_cond_var;
-
-	pthread_mutex_t mutex_;
+	pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
 };
 
 class futex_lock
@@ -221,41 +217,46 @@ private:
 class posix_cond_var
 {
 public:
-	posix_cond_var() noexcept : condition_(PTHREAD_COND_INITIALIZER)
-	{
-	}
+	using native_handle_type = pthread_cond_t *;
+
+	constexpr posix_cond_var() noexcept = default;
 
 	posix_cond_var(const posix_cond_var &) = delete;
 	posix_cond_var &operator=(const posix_cond_var &) = delete;
 
 	~posix_cond_var() noexcept
 	{
-		pthread_cond_destroy(&condition_);
+		pthread_cond_destroy(&cond_);
 	}
 
-	void wait(std::unique_lock<posix_mutex> &ulock)
+	void wait(std::unique_lock<posix_mutex> &lock)
 	{
-		int ret = pthread_cond_wait(&condition_, &ulock.mutex()->mutex_);
+		int ret = pthread_cond_wait(&cond_, lock.mutex()->native_handle());
 		if (ret)
 			throw_system_error(ret, "pthread_cond_wait()");
 	}
 
 	void notify_one()
 	{
-		int ret = pthread_cond_signal(&condition_);
+		int ret = pthread_cond_signal(&cond_);
 		if (ret)
 			throw_system_error(ret, "pthread_cond_signal()");
 	}
 
 	void notify_all()
 	{
-		int ret = pthread_cond_broadcast(&condition_);
+		int ret = pthread_cond_broadcast(&cond_);
 		if (ret)
 			throw_system_error(ret, "pthread_cond_broadcast()");
 	}
 
+	native_handle_type native_handle()
+	{
+		return &cond_;
+	}
+
 private:
-	pthread_cond_t condition_;
+	pthread_cond_t cond_ = PTHREAD_COND_INITIALIZER;
 };
 
 class futex_cond_var
