@@ -139,6 +139,15 @@ public:
 		}
 	}
 
+	bool try_lock()
+	{
+		base_type head = head_.load(std::memory_order_acquire);
+		base_type tail = tail_.load(std::memory_order_relaxed);
+		return head == tail
+		       && tail_.compare_exchange_strong(
+				  tail, tail + 1, std::memory_order_relaxed);
+	}
+
 	void unlock()
 	{
 		head_.fetch_add(1, std::memory_order_release);
