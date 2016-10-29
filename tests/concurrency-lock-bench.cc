@@ -92,12 +92,16 @@ bench(unsigned nthreads)
 #endif
 
 #if __linux__
+	BENCH2(futex_lock, const_cycle_backoff);
 	BENCH2(futex_lock, linear_cycle_backoff);
 	BENCH2(futex_lock, exponential_cycle_backoff);
-	BENCH2(futex_lock, proportional_cycle_backoff);
+	BENCH2(futex_lock, const_relax_backoff);
+	BENCH2(futex_lock, const_relax_x2_backoff);
+	BENCH2(futex_lock, const_relax_x4_backoff);
+	BENCH2(futex_lock, const_relax_x6_backoff);
+	BENCH2(futex_lock, const_relax_x8_backoff);
 	BENCH2(futex_lock, linear_relax_backoff);
 	BENCH2(futex_lock, exponential_relax_backoff);
-	BENCH2(futex_lock, proportional_relax_backoff);
 #endif
 
 	BENCH2(spin_lock, no_backoff);
