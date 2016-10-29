@@ -89,6 +89,25 @@ public:
 };
 
 template <typename Pause>
+class const_backoff
+{
+public:
+	const_backoff(std::uint32_t backoff) noexcept : backoff_{backoff}
+	{
+	}
+
+	bool operator()(std::uint32_t factor = 1) noexcept
+	{
+		pause_(backoff_ * factor);
+		return false;
+	}
+
+private:
+	std::uint32_t backoff_;
+	Pause pause_;
+};
+
+template <typename Pause>
 class linear_backoff
 {
 public:
@@ -139,6 +158,7 @@ private:
 	Pause pause_;
 };
 
+#if 0
 template <typename Pause>
 class proportional_backoff
 {
@@ -157,6 +177,7 @@ private:
 	std::uint32_t backoff_;
 	Pause pause_;
 };
+#endif
 
 template <typename FirstBackoff, typename SecondBackoff>
 class composite_backoff

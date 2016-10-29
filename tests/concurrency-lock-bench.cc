@@ -16,17 +16,24 @@ evenk::futex_lock futex_lock;
 evenk::no_backoff no_backoff;
 evenk::yield_backoff yield_backoff;
 
+evenk::const_backoff<evenk::cpu_cycle> const_cycle_backoff(40);
 evenk::linear_backoff<evenk::cpu_cycle> linear_cycle_backoff(40);
 evenk::exponential_backoff<evenk::cpu_cycle> exponential_cycle_backoff(40);
-evenk::proportional_backoff<evenk::cpu_cycle> proportional_cycle_backoff(40);
+//evenk::proportional_backoff<evenk::cpu_cycle> proportional_cycle_backoff(40);
 
+evenk::const_backoff<evenk::cpu_relax> const_relax_backoff(1);
+evenk::const_backoff<evenk::cpu_relax> const_relax_x2_backoff(2);
+evenk::const_backoff<evenk::cpu_relax> const_relax_x4_backoff(4);
+evenk::const_backoff<evenk::cpu_relax> const_relax_x6_backoff(6);
+evenk::const_backoff<evenk::cpu_relax> const_relax_x8_backoff(8);
 evenk::linear_backoff<evenk::cpu_relax> linear_relax_backoff(5);
 evenk::exponential_backoff<evenk::cpu_relax> exponential_relax_backoff(5);
-evenk::proportional_backoff<evenk::cpu_relax> proportional_relax_backoff(5);
+//evenk::proportional_backoff<evenk::cpu_relax> proportional_relax_backoff(5);
 
+evenk::const_backoff<evenk::nanosleep> const_sleep_backoff(10);
 evenk::linear_backoff<evenk::nanosleep> linear_sleep_backoff(10);
 evenk::exponential_backoff<evenk::nanosleep> exponential_sleep_backoff(10);
-evenk::proportional_backoff<evenk::nanosleep> proportional_sleep_backoff(10);
+//evenk::proportional_backoff<evenk::nanosleep> proportional_sleep_backoff(10);
 
 evenk::composite_backoff<evenk::linear_backoff<evenk::cpu_cycle>, evenk::yield_backoff>
 	cycle_yield_backoff(linear_cycle_backoff, yield_backoff);
@@ -94,40 +101,54 @@ bench(unsigned nthreads)
 #endif
 
 	BENCH2(spin_lock, no_backoff);
+	BENCH2(spin_lock, const_cycle_backoff);
 	BENCH2(spin_lock, linear_cycle_backoff);
 	BENCH2(spin_lock, exponential_cycle_backoff);
-	BENCH2(spin_lock, proportional_cycle_backoff);
+	BENCH2(spin_lock, const_relax_backoff);
+	BENCH2(spin_lock, const_relax_x2_backoff);
+	BENCH2(spin_lock, const_relax_x4_backoff);
+	BENCH2(spin_lock, const_relax_x6_backoff);
+	BENCH2(spin_lock, const_relax_x8_backoff);
 	BENCH2(spin_lock, linear_relax_backoff);
 	BENCH2(spin_lock, exponential_relax_backoff);
-	BENCH2(spin_lock, proportional_relax_backoff);
 	BENCH2(spin_lock, yield_backoff);
 	BENCH2(spin_lock, cycle_yield_backoff);
 	BENCH2(spin_lock, relax_yield_backoff);
+	BENCH2(spin_lock, const_sleep_backoff);
 	BENCH2(spin_lock, linear_sleep_backoff);
 	BENCH2(spin_lock, exponential_sleep_backoff);
-	BENCH2(spin_lock, proportional_sleep_backoff);
 
 	BENCH2(tatas_lock, no_backoff);
+	BENCH2(tatas_lock, const_cycle_backoff);
 	BENCH2(tatas_lock, linear_cycle_backoff);
 	BENCH2(tatas_lock, exponential_cycle_backoff);
-	BENCH2(tatas_lock, proportional_cycle_backoff);
+	BENCH2(tatas_lock, const_relax_backoff);
+	BENCH2(tatas_lock, const_relax_x2_backoff);
+	BENCH2(tatas_lock, const_relax_x4_backoff);
+	BENCH2(tatas_lock, const_relax_x6_backoff);
+	BENCH2(tatas_lock, const_relax_x8_backoff);
 	BENCH2(tatas_lock, linear_relax_backoff);
 	BENCH2(tatas_lock, exponential_relax_backoff);
-	BENCH2(tatas_lock, proportional_relax_backoff);
 	BENCH2(tatas_lock, yield_backoff);
 	BENCH2(tatas_lock, cycle_yield_backoff);
 	BENCH2(tatas_lock, relax_yield_backoff);
+	BENCH2(tatas_lock, const_sleep_backoff);
 	BENCH2(tatas_lock, linear_sleep_backoff);
 	BENCH2(tatas_lock, exponential_sleep_backoff);
-	BENCH2(tatas_lock, proportional_sleep_backoff);
 
 	BENCH2(ticket_lock, no_backoff);
+	BENCH2(ticket_lock, const_cycle_backoff);
 	BENCH2(ticket_lock, linear_cycle_backoff);
 	BENCH2(ticket_lock, exponential_cycle_backoff);
-	BENCH2(ticket_lock, proportional_cycle_backoff);
+//	BENCH2(ticket_lock, proportional_cycle_backoff);
+	BENCH2(ticket_lock, const_relax_backoff);
+	BENCH2(ticket_lock, const_relax_x2_backoff);
+	BENCH2(ticket_lock, const_relax_x4_backoff);
+	BENCH2(ticket_lock, const_relax_x6_backoff);
+	BENCH2(ticket_lock, const_relax_x8_backoff);
 	BENCH2(ticket_lock, linear_relax_backoff);
 	BENCH2(ticket_lock, exponential_relax_backoff);
-	BENCH2(ticket_lock, proportional_relax_backoff);
+//	BENCH2(ticket_lock, proportional_relax_backoff);
 	BENCH2(ticket_lock, yield_backoff);
 	BENCH2(ticket_lock, cycle_yield_backoff);
 	BENCH2(ticket_lock, relax_yield_backoff);
@@ -142,7 +163,7 @@ int
 main()
 {
 	unsigned n = std::thread::hardware_concurrency();
-	for (unsigned i = 1; i <= n; i += i)
+	for (unsigned i = 1; i <= n; i += std::min(i, 8u))
 		bench(i);
 	return 0;
 }

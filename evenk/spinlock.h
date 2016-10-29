@@ -127,6 +127,7 @@ public:
 		}
 	}
 
+#if 0
 	template <typename Pause>
 	void lock(proportional_backoff<Pause> backoff)
 	{
@@ -138,6 +139,7 @@ public:
 			backoff(static_cast<base_type>(tail - head));
 		}
 	}
+#endif
 
 	bool try_lock()
 	{
