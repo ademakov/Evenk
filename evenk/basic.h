@@ -50,6 +50,16 @@ throw_system_error(int err_num, const std::string &what)
 	throw std::system_error(err_num, std::system_category(), what);
 }
 
+class non_copyable
+{
+protected:
+	constexpr non_copyable() noexcept = default;
+	~non_copyable() noexcept = default;
+
+	non_copyable(const non_copyable &) = delete;
+	non_copyable &operator=(const non_copyable &) = delete;
+};
+
 } // namespace evenk
 
 #endif // !EVENK_BASIC_H_

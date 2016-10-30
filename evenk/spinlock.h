@@ -28,16 +28,14 @@
 #include <atomic>
 
 #include "backoff.h"
+#include "basic.h"
 
 namespace evenk {
 
-class spin_lock
+class spin_lock : non_copyable
 {
 public:
 	constexpr spin_lock() noexcept = default;
-
-	spin_lock(const spin_lock &) = delete;
-	spin_lock &operator=(const spin_lock &) = delete;
 
 	void lock()
 	{
@@ -65,13 +63,10 @@ private:
 	std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
 };
 
-class tatas_lock
+class tatas_lock : non_copyable
 {
 public:
 	constexpr tatas_lock() noexcept = default;
-
-	tatas_lock(const tatas_lock &) = delete;
-	tatas_lock &operator=(const tatas_lock &) = delete;
 
 	void lock()
 	{
@@ -102,13 +97,10 @@ private:
 	std::atomic<bool> lock_ = ATOMIC_VAR_INIT(false);
 };
 
-class ticket_lock
+class ticket_lock : non_copyable
 {
 public:
 	constexpr ticket_lock() noexcept = default;
-
-	ticket_lock(const ticket_lock &) = delete;
-	ticket_lock &operator=(const ticket_lock &) = delete;
 
 	void lock()
 	{

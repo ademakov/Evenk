@@ -42,15 +42,12 @@ namespace evenk {
 // Mutexes
 //
 
-class posix_mutex
+class posix_mutex: non_copyable
 {
 public:
 	using native_handle_type = pthread_mutex_t *;
 
 	constexpr posix_mutex() noexcept = default;
-
-	posix_mutex(const posix_mutex &) = delete;
-	posix_mutex &operator=(const posix_mutex &) = delete;
 
 	~posix_mutex() noexcept
 	{
@@ -91,15 +88,12 @@ private:
 	pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
 };
 
-class futex_lock
+class futex_lock: non_copyable
 {
 public:
 	using native_handle_type = futex_t &;
 
 	constexpr futex_lock() noexcept = default;
-
-	futex_lock(const futex_lock &) = delete;
-	futex_lock &operator=(const futex_lock &) = delete;
 
 	void lock()
 	{
@@ -217,15 +211,12 @@ private:
 // Condition Variables
 //
 
-class posix_cond_var
+class posix_cond_var: non_copyable
 {
 public:
 	using native_handle_type = pthread_cond_t *;
 
 	constexpr posix_cond_var() noexcept = default;
-
-	posix_cond_var(const posix_cond_var &) = delete;
-	posix_cond_var &operator=(const posix_cond_var &) = delete;
 
 	~posix_cond_var() noexcept
 	{
@@ -262,13 +253,10 @@ private:
 	pthread_cond_t cond_ = PTHREAD_COND_INITIALIZER;
 };
 
-class futex_cond_var
+class futex_cond_var: non_copyable
 {
 public:
 	constexpr futex_cond_var() noexcept = default;
-
-	futex_cond_var(const futex_cond_var &) = delete;
-	futex_cond_var &operator=(const futex_cond_var &) = delete;
 
 	void wait(lock_guard<futex_lock> &guard)
 	{
