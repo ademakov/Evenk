@@ -31,10 +31,10 @@
 #include <stdexcept>
 #include <thread>
 
-#include "evenk/backoff.h"
-#include "evenk/basic.h"
-#include "evenk/futex.h"
-#include "evenk/synch.h"
+#include "backoff.h"
+#include "basic.h"
+#include "futex.h"
+#include "synch.h"
 
 namespace evenk {
 

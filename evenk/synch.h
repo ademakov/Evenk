@@ -32,9 +32,9 @@
 
 #include <pthread.h>
 
-#include "evenk/backoff.h"
-#include "evenk/basic.h"
-#include "evenk/futex.h"
+#include "backoff.h"
+#include "basic.h"
+#include "futex.h"
 
 namespace evenk {
 

@@ -27,7 +27,7 @@
 
 #include <deque>
 
-#include "evenk/synch.h"
+#include "synch.h"
 
 namespace evenk {
 
