@@ -115,23 +115,9 @@ public:
 			base_type head = head_.load(std::memory_order_acquire);
 			if (tail == head)
 				break;
-			backoff();
+			proportional_adapter(backoff, static_cast<base_type>(tail - head));
 		}
 	}
-
-#if 0
-	template <typename Pause>
-	void lock(proportional_backoff<Pause> backoff)
-	{
-		base_type tail = tail_.fetch_add(1, std::memory_order_relaxed);
-		for (;;) {
-			base_type head = head_.load(std::memory_order_acquire);
-			if (tail == head)
-				break;
-			backoff(static_cast<base_type>(tail - head));
-		}
-	}
-#endif
 
 	bool try_lock()
 	{
