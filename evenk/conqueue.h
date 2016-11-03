@@ -173,9 +173,10 @@ namespace detail {
 //
 // A concurrent queue input iterator. Unlike the underlying queue a given
 // iterator instance is not concurrent itself. However distinct iterator
-// instances for the same queue can be passed to different threads and so
+// instances for the same queue can be used from different threads and so
 // provide concurrent access.
 //
+
 template <typename Queue>
 class queue_input_iterator
 {
@@ -519,6 +520,12 @@ public:
 private:
 	queue_type *queue_;
 };
+
+template <typename Value>
+using queue_back = generic_queue_back<queue_base<Value>>;
+
+template <typename Value>
+using queue_front = generic_queue_front<queue_base<Value>>;
 
 } // namespace evenk
 
