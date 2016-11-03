@@ -32,7 +32,7 @@
 namespace evenk {
 
 template <typename Value, typename Synch = default_synch, typename Sequence = std::deque<Value>>
-class queue
+class synch_queue
 {
 public:
 	using lock_type = typename Synch::lock_type;
@@ -41,11 +41,11 @@ public:
 
 	using sequence_type = Sequence;
 
-	queue() noexcept : finish_(false)
+	synch_queue() noexcept : finish_(false)
 	{
 	}
 
-	queue(queue &&other) noexcept : finish_(other.finish_)
+	synch_queue(synch_queue &&other) noexcept : finish_(other.finish_)
 	{
 		std::swap(queue_, other.queue_);
 	}

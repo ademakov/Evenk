@@ -76,29 +76,29 @@ bench(unsigned nthreads)
 #define BENCH1(queue) bench(nthreads, #queue, queue)
 #define BENCH2(queue, backoff) bench(nthreads, #queue " " #backoff, queue, backoff)
 
-	queue<std::string, std_synch> std_queue;
-	queue<std::string, posix_synch> posix_queue;
+	synch_queue<std::string, std_synch> std_queue;
+	synch_queue<std::string, posix_synch> posix_queue;
 
 	BENCH1(std_queue);
 	BENCH1(posix_queue);
 
 #if __linux__
 	{
-		queue<std::string, futex_synch> futex_queue;
+		synch_queue<std::string, futex_synch> futex_queue;
 		BENCH1(futex_queue);
 	}
 	{
-		queue<std::string, futex_synch> futex_queue;
+		synch_queue<std::string, futex_synch> futex_queue;
 		linear_backoff<cpu_cycle> linear_cycle_backoff(100000);
 		BENCH2(futex_queue, linear_cycle_backoff);
 	}
 	{
-		queue<std::string, futex_synch> futex_queue;
+		synch_queue<std::string, futex_synch> futex_queue;
 		linear_backoff<cpu_relax> linear_relax_backoff(100000);
 		BENCH2(futex_queue, linear_relax_backoff);
 	}
 	{
-		queue<std::string, futex_synch> futex_queue;
+		synch_queue<std::string, futex_synch> futex_queue;
 		yield_backoff yield_backoff;
 		BENCH2(futex_queue, yield_backoff);
 	}
