@@ -22,8 +22,8 @@
 // THE SOFTWARE.
 //
 
-#ifndef EVENK_QUEUE_H_
-#define EVENK_QUEUE_H_
+#ifndef EVENK_SYNCH_QUEUE_H_
+#define EVENK_SYNCH_QUEUE_H_
 
 #include <deque>
 
@@ -107,4 +107,4 @@ private:
 
 } // namespace evenk
 
-#endif // !EVENK_QUEUE_H_
+#endif // !EVENK_SYNCH_QUEUE_H_

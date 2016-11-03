@@ -5,7 +5,6 @@ include_HEADERS = \
     bounded_queue.h \
     conqueue.h \
     futex.h \
-    queue.h \
     spinlock.h \
-    synch.h
-
+    synch.h \
+    synch_queue.h

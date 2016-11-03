@@ -1,5 +1,5 @@
 #include "evenk/bounded_queue.h"
-#include "evenk/queue.h"
+#include "evenk/synch_queue.h"
 
 #include <chrono>
 #include <cstring>
