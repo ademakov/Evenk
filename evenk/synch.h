@@ -146,33 +146,38 @@ private:
 // Lock Guard
 //
 
-template <typename LockType>
-class lock_guard
+template <typename Lock>
+class lock_guard : non_copyable
 {
 public:
-	lock_guard(LockType &a_lock) : lock_ptr_(&a_lock), owns_lock_(false)
+	using lock_type = Lock;
+
+	lock_guard(lock_type &a_lock) : lock_ptr_(&a_lock), owns_lock_(false)
 	{
 		lock();
 	}
 
 	template <typename Backoff>
-	lock_guard(LockType &a_lock, Backoff backoff) : lock_ptr_(&a_lock), owns_lock_(false)
+	lock_guard(lock_type &a_lock, Backoff backoff) : lock_ptr_(&a_lock), owns_lock_(false)
 	{
 		lock(backoff);
 	}
 
-	lock_guard(LockType &a_lock, std::adopt_lock_t) noexcept
+	lock_guard(lock_type &a_lock, std::adopt_lock_t) noexcept
 		: lock_ptr_(&a_lock), owns_lock_(true)
 	{
 	}
 
-	lock_guard(LockType &a_lock, std::defer_lock_t) noexcept
+	lock_guard(lock_type &a_lock, std::defer_lock_t) noexcept
 		: lock_ptr_(&a_lock), owns_lock_(false)
 	{
 	}
 
-	lock_guard(const lock_guard &) = delete;
-	lock_guard &operator=(const lock_guard &) = delete;
+	lock_guard(lock_type &a_lock, std::try_to_lock_t) noexcept
+		: lock_ptr_(&a_lock), owns_lock_(false)
+	{
+		try_lock();
+	}
 
 	~lock_guard()
 	{
@@ -182,6 +187,8 @@ public:
 
 	void lock()
 	{
+		if (owns_lock_)
+			throw_system_error(int(std::errc::resource_deadlock_would_occur));
 		lock_ptr_->lock();
 		owns_lock_ = true;
 	}
@@ -189,17 +196,29 @@ public:
 	template <typename Backoff>
 	void lock(Backoff backoff)
 	{
+		if (owns_lock_)
+			throw_system_error(int(std::errc::resource_deadlock_would_occur));
 		lock_ptr_->lock(backoff);
 		owns_lock_ = true;
 	}
 
+	bool try_lock()
+	{
+		if (owns_lock_)
+			throw_system_error(int(std::errc::resource_deadlock_would_occur));
+		owns_lock_ = lock_ptr_->try_lock();
+		return owns_lock_;
+	}
+
 	void unlock()
 	{
+		if (!owns_lock_)
+			throw_system_error(int(std::errc::operation_not_permitted));
 		lock_ptr_->unlock();
 		owns_lock_ = false;
 	}
 
-	LockType *get()
+	lock_type *get()
 	{
 		return lock_ptr_;
 	}
@@ -210,7 +229,7 @@ public:
 	}
 
 private:
-	LockType *lock_ptr_;
+	lock_type *lock_ptr_;
 	bool owns_lock_;
 };
 
