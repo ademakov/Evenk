@@ -33,6 +33,7 @@
 
 #include "backoff.h"
 #include "basic.h"
+#include "conqueue.h"
 #include "futex.h"
 #include "synch.h"
 
@@ -172,11 +173,11 @@ private:
 };
 
 template <typename Value, typename Ticket = bounded_queue_busywait>
-class bounded_queue
+class bounded_queue : non_copyable
 {
 public:
 	bounded_queue(std::uint32_t size)
-		: ring_{nullptr}, mask_{size - 1}, finish_{false}, head_{0}, tail_{0}
+		: ring_{nullptr}, mask_{size - 1}, closed_{false}, head_{0}, tail_{0}
 	{
 		if (size == 0 || (size & mask_) != 0)
 			throw std::invalid_argument("BoundedQueue size must be a power of two");
@@ -191,40 +192,37 @@ public:
 	}
 
 	bounded_queue(bounded_queue &&other) noexcept
-		: ring_{other.ring_}, mask_{other.mask_}, finish_{false}, head_{0}, tail_{0}
+		: ring_{other.ring_}, mask_{other.mask_}, closed_{false}, head_{0}, tail_{0}
 	{
 		other.ring_ = nullptr;
 	}
-
-	bounded_queue(bounded_queue const &) = delete;
-	bounded_queue &operator=(bounded_queue const &) = delete;
 
 	~bounded_queue()
 	{
 		destroy();
 	}
 
-	bool empty() const
+	void close()
+	{
+		closed_.store(true, std::memory_order_relaxed);
+		for (std::uint32_t i = 0; i < mask_ + 1; i++)
+			ring_[i].wake();
+	}
+
+	bool is_closed() const
+	{
+		return closed_.load(std::memory_order_relaxed);
+	}
+
+	bool is_empty() const
 	{
 		int64_t head = head_.load(std::memory_order_relaxed);
 		int64_t tail = tail_.load(std::memory_order_relaxed);
 		return (tail <= head);
 	}
 
-	bool finished() const
-	{
-		return finish_.load(std::memory_order_relaxed);
-	}
-
-	void finish()
-	{
-		finish_.store(true, std::memory_order_relaxed);
-		for (std::uint32_t i = 0; i < mask_ + 1; i++)
-			ring_[i].wake();
-	}
-
 	template <typename... Backoff>
-	void enqueue(Value &&value, Backoff... backoff)
+	void push(Value &&value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
 		ring_slot &slot = ring_[tail & mask_];
@@ -234,7 +232,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	void enqueue(const Value &value, Backoff... backoff)
+	void push(const Value &value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
 		ring_slot &slot = ring_[tail & mask_];
@@ -244,15 +242,15 @@ public:
 	}
 
 	template <typename... Backoff>
-	bool dequeue(Value &value, Backoff... backoff)
+	queue_op_status wait_pop(Value &value, Backoff... backoff)
 	{
 		const std::uint64_t head = head_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[head & mask_];
 		if (!wait_head(slot, head + 1, std::forward<Backoff>(backoff)...))
-			return false;
+			return queue_op_status::closed;
 		value = std::move(slot.value);
 		wake_tail(slot, head + mask_ + 1);
-		return true;
+		return queue_op_status::success;
 	}
 
 private:
@@ -298,7 +296,7 @@ private:
 	{
 		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
-			if (finished()) {
+			if (is_closed()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
 				if (required_ticket >= tail)
 					return false;
@@ -314,7 +312,7 @@ private:
 		bool waiting = false;
 		std::uint32_t current_ticket = slot.load();
 		while (current_ticket != std::uint32_t(required_ticket)) {
-			if (finished()) {
+			if (is_closed()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
 				if (required_ticket >= tail)
 					return false;
@@ -342,7 +340,7 @@ private:
 	ring_slot *ring_;
 	const std::uint32_t mask_;
 
-	std::atomic<bool> finish_;
+	std::atomic<bool> closed_;
 
 	alignas(cache_line_size) std::atomic<std::uint64_t> head_;
 	alignas(cache_line_size) std::atomic<std::uint64_t> tail_;

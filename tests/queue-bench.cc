@@ -14,7 +14,7 @@ void
 consume(Queue &queue, size_t &count, Backoff... backoff)
 {
 	std::string data;
-	while (queue.dequeue(data, backoff...)) {
+	while (queue.wait_pop(data, backoff...) == queue_op_status::success) {
 		++count;
 	}
 }
@@ -25,7 +25,7 @@ produce(Queue &queue, int count, Backoff... backoff)
 {
 	std::string data = "this is a test string";
 	for (int i = 0; i < count; i++) {
-		queue.enqueue(data, backoff...);
+		queue.push(data, backoff...);
 	}
 }
 
@@ -47,7 +47,7 @@ bench(unsigned nthreads, const std::string &name, Queue &queue, Backoff... backo
 #define TOTAL (250 * 1000)
 
 	produce(queue, TOTAL, backoff...);
-	queue.finish();
+	queue.close();
 
 	for (auto &t : threads)
 		t.join();
