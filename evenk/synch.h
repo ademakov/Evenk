@@ -42,7 +42,7 @@ namespace evenk {
 // Mutexes
 //
 
-class posix_mutex: non_copyable
+class posix_mutex : non_copyable
 {
 public:
 	using native_handle_type = pthread_mutex_t *;
@@ -88,7 +88,7 @@ private:
 	pthread_mutex_t mutex_ = PTHREAD_MUTEX_INITIALIZER;
 };
 
-class futex_lock: non_copyable
+class futex_lock : non_copyable
 {
 public:
 	using native_handle_type = futex_t &;
@@ -116,6 +116,13 @@ public:
 				break;
 			}
 		}
+	}
+
+	bool try_lock()
+	{
+		std::uint32_t value = 0;
+		return futex_.compare_exchange_strong(
+			value, 1, std::memory_order_acquire, std::memory_order_relaxed);
 	}
 
 	void unlock()
@@ -211,7 +218,7 @@ private:
 // Condition Variables
 //
 
-class posix_cond_var: non_copyable
+class posix_cond_var : non_copyable
 {
 public:
 	using native_handle_type = pthread_cond_t *;
@@ -253,7 +260,7 @@ private:
 	pthread_cond_t cond_ = PTHREAD_COND_INITIALIZER;
 };
 
-class futex_cond_var: non_copyable
+class futex_cond_var : non_copyable
 {
 public:
 	constexpr futex_cond_var() noexcept = default;
