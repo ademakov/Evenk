@@ -26,6 +26,7 @@
 #define EVENK_SPINLOCK_H_
 
 #include <atomic>
+#include <cstdint>
 
 #include "backoff.h"
 #include "basic.h"
@@ -134,7 +135,7 @@ public:
 	}
 
 private:
-	using base_type = uint16_t;
+	using base_type = std::uint16_t;
 
 	std::atomic<base_type> head_ = ATOMIC_VAR_INIT(0);
 	std::atomic<base_type> tail_ = ATOMIC_VAR_INIT(0);
