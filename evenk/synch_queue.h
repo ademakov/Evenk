@@ -154,7 +154,7 @@ public:
 	{
 		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		auto status = locked_pop(value);
-		while (status != queue_op_status::empty) {
+		while (status == queue_op_status::empty) {
 			cond_.wait(guard);
 			status = locked_pop(value);
 		}
