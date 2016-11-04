@@ -150,31 +150,30 @@ template <typename Lock>
 class lock_guard : non_copyable
 {
 public:
-	using lock_type = Lock;
+	using mutex_type = Lock;
 
-	lock_guard(lock_type &a_lock) : lock_ptr_(&a_lock), owns_lock_(false)
+	lock_guard(mutex_type &mutex) : mutex_(&mutex), owns_lock_(false)
 	{
 		lock();
 	}
 
 	template <typename Backoff>
-	lock_guard(lock_type &a_lock, Backoff backoff) : lock_ptr_(&a_lock), owns_lock_(false)
+	lock_guard(mutex_type &mutex, Backoff backoff) : mutex_(&mutex), owns_lock_(false)
 	{
 		lock(backoff);
 	}
 
-	lock_guard(lock_type &a_lock, std::adopt_lock_t) noexcept
-		: lock_ptr_(&a_lock), owns_lock_(true)
+	lock_guard(mutex_type &mutex, std::adopt_lock_t) noexcept
+		: mutex_(&mutex), owns_lock_(true)
 	{
 	}
 
-	lock_guard(lock_type &a_lock, std::defer_lock_t) noexcept
-		: lock_ptr_(&a_lock), owns_lock_(false)
+	lock_guard(mutex_type &mutex, std::defer_lock_t) noexcept
+		: mutex_(&mutex), owns_lock_(false)
 	{
 	}
 
-	lock_guard(lock_type &a_lock, std::try_to_lock_t) noexcept
-		: lock_ptr_(&a_lock), owns_lock_(false)
+	lock_guard(mutex_type &mutex, std::try_to_lock_t) : mutex_(&mutex), owns_lock_(false)
 	{
 		try_lock();
 	}
@@ -182,14 +181,14 @@ public:
 	~lock_guard()
 	{
 		if (owns_lock_)
-			lock_ptr_->unlock();
+			mutex_->unlock();
 	}
 
 	void lock()
 	{
 		if (owns_lock_)
 			throw_system_error(int(std::errc::resource_deadlock_would_occur));
-		lock_ptr_->lock();
+		mutex_->lock();
 		owns_lock_ = true;
 	}
 
@@ -198,7 +197,7 @@ public:
 	{
 		if (owns_lock_)
 			throw_system_error(int(std::errc::resource_deadlock_would_occur));
-		lock_ptr_->lock(backoff);
+		mutex_->lock(backoff);
 		owns_lock_ = true;
 	}
 
@@ -206,7 +205,7 @@ public:
 	{
 		if (owns_lock_)
 			throw_system_error(int(std::errc::resource_deadlock_would_occur));
-		owns_lock_ = lock_ptr_->try_lock();
+		owns_lock_ = mutex_->try_lock();
 		return owns_lock_;
 	}
 
@@ -214,13 +213,13 @@ public:
 	{
 		if (!owns_lock_)
 			throw_system_error(int(std::errc::operation_not_permitted));
-		lock_ptr_->unlock();
+		mutex_->unlock();
 		owns_lock_ = false;
 	}
 
-	lock_type *get()
+	mutex_type *mutex()
 	{
-		return lock_ptr_;
+		return mutex_;
 	}
 
 	bool owns_lock()
@@ -229,7 +228,7 @@ public:
 	}
 
 private:
-	lock_type *lock_ptr_;
+	mutex_type *mutex_;
 	bool owns_lock_;
 };
 
@@ -286,7 +285,7 @@ public:
 
 	void wait(lock_guard<futex_lock> &guard)
 	{
-		futex_lock *owner = guard.get();
+		futex_lock *owner = guard.mutex();
 		if (owner_ != nullptr && owner_ != owner)
 			throw std::invalid_argument(
 				"different locks used for the same condition variable.");
