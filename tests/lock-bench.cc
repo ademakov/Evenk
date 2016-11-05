@@ -30,11 +30,6 @@ evenk::linear_backoff<evenk::cpu_relax> linear_relax_backoff(5);
 evenk::exponential_backoff<evenk::cpu_relax> exponential_relax_backoff(5);
 evenk::proportional_backoff<evenk::cpu_relax> proportional_relax_backoff(1);
 
-evenk::const_backoff<evenk::nanosleep> const_sleep_backoff(10);
-evenk::linear_backoff<evenk::nanosleep> linear_sleep_backoff(10);
-evenk::exponential_backoff<evenk::nanosleep> exponential_sleep_backoff(10);
-evenk::proportional_backoff<evenk::nanosleep> proportional_sleep_backoff(10);
-
 evenk::composite_backoff<evenk::linear_backoff<evenk::cpu_cycle>, evenk::yield_backoff>
 	cycle_yield_backoff(linear_cycle_backoff, yield_backoff);
 evenk::composite_backoff<evenk::linear_backoff<evenk::cpu_relax>, evenk::yield_backoff>
@@ -118,9 +113,6 @@ bench(unsigned nthreads, unsigned hardware_nthreads)
 	BENCH2(spin_lock, yield_backoff);
 	BENCH2(spin_lock, cycle_yield_backoff);
 	BENCH2(spin_lock, relax_yield_backoff);
-	BENCH2(spin_lock, const_sleep_backoff);
-	BENCH2(spin_lock, linear_sleep_backoff);
-	BENCH2(spin_lock, exponential_sleep_backoff);
 
 	BENCH2(tatas_lock, no_backoff);
 	BENCH2(tatas_lock, const_cycle_backoff);
@@ -136,9 +128,6 @@ bench(unsigned nthreads, unsigned hardware_nthreads)
 	BENCH2(tatas_lock, yield_backoff);
 	BENCH2(tatas_lock, cycle_yield_backoff);
 	BENCH2(tatas_lock, relax_yield_backoff);
-	BENCH2(tatas_lock, const_sleep_backoff);
-	BENCH2(tatas_lock, linear_sleep_backoff);
-	BENCH2(tatas_lock, exponential_sleep_backoff);
 
 	if (nthreads < hardware_nthreads || hardware_nthreads <= 8) {
 		BENCH2(ticket_lock, no_backoff);
@@ -157,9 +146,6 @@ bench(unsigned nthreads, unsigned hardware_nthreads)
 		BENCH2(ticket_lock, yield_backoff);
 		BENCH2(ticket_lock, cycle_yield_backoff);
 		BENCH2(ticket_lock, relax_yield_backoff);
-		BENCH2(ticket_lock, linear_sleep_backoff);
-		BENCH2(ticket_lock, exponential_sleep_backoff);
-		BENCH2(ticket_lock, proportional_sleep_backoff);
 	} else {
 		BENCH2(ticket_lock, yield_backoff);
 		BENCH2(ticket_lock, cycle_yield_backoff);
