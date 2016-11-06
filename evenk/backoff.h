@@ -111,7 +111,8 @@ template <typename Pause>
 class linear_backoff
 {
 public:
-	linear_backoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
+	linear_backoff(std::uint32_t ceiling, std::uint32_t step) noexcept
+		: ceiling_{ceiling}, step_{step}, backoff_{0}
 	{
 	}
 
@@ -121,13 +122,15 @@ public:
 			pause_(ceiling_);
 			return true;
 		} else {
-			pause_(backoff_++);
+			pause_(backoff_);
+			backoff_ += step_;
 			return false;
 		}
 	}
 
 private:
 	const std::uint32_t ceiling_;
+	const std::uint32_t step_;
 	std::uint32_t backoff_;
 	Pause pause_;
 };

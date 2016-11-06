@@ -17,7 +17,7 @@ evenk::no_backoff no_backoff;
 evenk::yield_backoff yield_backoff;
 
 evenk::const_backoff<evenk::cpu_cycle> const_cycle_backoff(40);
-evenk::linear_backoff<evenk::cpu_cycle> linear_cycle_backoff(40);
+evenk::linear_backoff<evenk::cpu_cycle> linear_cycle_backoff(100, 20);
 evenk::exponential_backoff<evenk::cpu_cycle> exponential_cycle_backoff(40);
 evenk::proportional_backoff<evenk::cpu_cycle> proportional_cycle_backoff(20);
 
@@ -26,7 +26,7 @@ evenk::const_backoff<evenk::cpu_relax> const_relax_x2_backoff(2);
 evenk::const_backoff<evenk::cpu_relax> const_relax_x4_backoff(4);
 evenk::const_backoff<evenk::cpu_relax> const_relax_x6_backoff(6);
 evenk::const_backoff<evenk::cpu_relax> const_relax_x8_backoff(8);
-evenk::linear_backoff<evenk::cpu_relax> linear_relax_backoff(5);
+evenk::linear_backoff<evenk::cpu_relax> linear_relax_backoff(10, 2);
 evenk::exponential_backoff<evenk::cpu_relax> exponential_relax_backoff(5);
 evenk::proportional_backoff<evenk::cpu_relax> proportional_relax_backoff(1);
 
