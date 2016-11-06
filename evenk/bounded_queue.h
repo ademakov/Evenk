@@ -39,6 +39,8 @@
 
 namespace evenk {
 
+namespace detail {
+
 class bounded_queue_ticket : protected std::atomic<std::uint32_t>
 {
 public:
@@ -60,7 +62,9 @@ public:
 	}
 };
 
-class bounded_queue_busywait : public bounded_queue_ticket
+} // namespace detail
+
+class bounded_queue_busywait : public detail::bounded_queue_ticket
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t)
@@ -78,7 +82,7 @@ public:
 	}
 };
 
-class bounded_queue_yield : public bounded_queue_ticket
+class bounded_queue_yield : public detail::bounded_queue_ticket
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t)
@@ -97,7 +101,7 @@ public:
 	}
 };
 
-class bounded_queue_futex : public bounded_queue_ticket
+class bounded_queue_futex : public detail::bounded_queue_ticket
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t value)
@@ -136,7 +140,7 @@ private:
 };
 
 template <typename Synch = default_synch>
-class bounded_queue_synch : public bounded_queue_ticket
+class bounded_queue_synch : public detail::bounded_queue_ticket
 {
 public:
 	using lock_type = typename Synch::lock_type;
@@ -176,11 +180,21 @@ template <typename Value, typename Ticket = bounded_queue_busywait>
 class bounded_queue : non_copyable
 {
 public:
+	static_assert(std::is_nothrow_default_constructible<Value>::value,
+		      "bounded_queue requires values with nothrow default constructor");
+#if 0
+	static_assert(std::is_nothrow_copy_assignable<Value>::value,
+			"bounded_queue requires values with nothrow copy assignment");
+#endif
+	static_assert(std::is_nothrow_move_assignable<Value>::value,
+		      "bounded_queue requires values with nothrow move assignment");
+
 	bounded_queue(std::uint32_t size)
 		: ring_{nullptr}, mask_{size - 1}, closed_{false}, head_{0}, tail_{0}
 	{
 		if (size == 0 || (size & mask_) != 0)
-			throw std::invalid_argument("BoundedQueue size must be a power of two");
+			throw std::invalid_argument(
+				"bounded_queue size must be a power of two");
 
 		void *ring;
 		if (::posix_memalign(&ring, cache_line_size, size * sizeof(ring_slot)))
