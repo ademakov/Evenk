@@ -39,7 +39,7 @@
 
 namespace evenk {
 
-namespace detail {
+inline namespace detail {
 
 class bounded_queue_ticket : protected std::atomic<std::uint32_t>
 {
@@ -64,7 +64,7 @@ public:
 
 } // namespace detail
 
-class bounded_queue_busywait : public detail::bounded_queue_ticket
+class bounded_queue_busywait : public bounded_queue_ticket
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t)
@@ -82,7 +82,7 @@ public:
 	}
 };
 
-class bounded_queue_yield : public detail::bounded_queue_ticket
+class bounded_queue_yield : public bounded_queue_ticket
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t)
@@ -101,7 +101,7 @@ public:
 	}
 };
 
-class bounded_queue_futex : public detail::bounded_queue_ticket
+class bounded_queue_futex : public bounded_queue_ticket
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t value)
@@ -140,7 +140,7 @@ private:
 };
 
 template <typename Synch = default_synch>
-class bounded_queue_synch : public detail::bounded_queue_ticket
+class bounded_queue_synch : public bounded_queue_ticket
 {
 public:
 	using lock_type = typename Synch::lock_type;
@@ -180,14 +180,14 @@ template <typename Value, typename Ticket = bounded_queue_busywait>
 class bounded_queue : non_copyable
 {
 public:
+#if 0
 	static_assert(std::is_nothrow_default_constructible<Value>::value,
 		      "bounded_queue requires values with nothrow default constructor");
-#if 0
 	static_assert(std::is_nothrow_copy_assignable<Value>::value,
 			"bounded_queue requires values with nothrow copy assignment");
-#endif
 	static_assert(std::is_nothrow_move_assignable<Value>::value,
 		      "bounded_queue requires values with nothrow move assignment");
+#endif
 
 	bounded_queue(std::uint32_t size)
 		: ring_{nullptr}, mask_{size - 1}, closed_{false}, head_{0}, tail_{0}
