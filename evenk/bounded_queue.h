@@ -41,7 +41,21 @@ namespace evenk {
 
 inline namespace detail {
 
-class bounded_queue_ticket : protected std::atomic<std::uint32_t>
+enum bq_status : std::uint32_t {
+	bq_normal = 0,
+	bq_waiting = 1,
+	bq_invalid = 2,
+	bq_closed = 3,
+};
+
+constexpr std::uint32_t bq_status_bits = 2;
+constexpr std::uint32_t bq_ticket_step = 1 << bq_status_bits;
+constexpr std::uint32_t bq_status_mask = bq_ticket_step - 1;
+constexpr std::uint32_t bq_ticket_mask = ~bq_status_mask;
+
+} // namespace detail
+
+class bq_slot : protected std::atomic<std::uint32_t>
 {
 public:
 	using base = std::atomic<std::uint32_t>;
@@ -56,17 +70,6 @@ public:
 		return base::load(std::memory_order_acquire);
 	}
 
-	void store(std::uint32_t value)
-	{
-		base::store(value, std::memory_order_release);
-	}
-};
-
-} // namespace detail
-
-class bounded_queue_busywait : public bounded_queue_ticket
-{
-public:
 	std::uint32_t wait_and_load(std::uint32_t)
 	{
 		return load();
@@ -74,7 +77,7 @@ public:
 
 	void store_and_wake(std::uint32_t value)
 	{
-		store(value);
+		base::store(value, std::memory_order_release);
 	}
 
 	void wake()
@@ -82,7 +85,7 @@ public:
 	}
 };
 
-class bounded_queue_yield : public bounded_queue_ticket
+class bq_yield_slot : public bq_slot
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t)
@@ -90,43 +93,28 @@ public:
 		std::this_thread::yield();
 		return load();
 	}
-
-	void store_and_wake(std::uint32_t value)
-	{
-		store(value);
-	}
-
-	void wake()
-	{
-	}
 };
 
-class bounded_queue_futex : public bounded_queue_ticket
+class bq_futex_slot : public bq_slot
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t value)
 	{
-		wait_count_.fetch_add(1, std::memory_order_relaxed);
-		// FIXME: Presuming a futex syscall is a full memory fence
-		// on its own. The threads that load the wait_count_ field
-		// must see it incremented  as long as there is any chance
-		// the current thread might be sleeping on the futex. On the
-		// other hand within the futex system call, if the current
-		// thread is not sleeping yet, it should be able to observe
-		// a possible futex value update from other threads.
-		//
-		// If for some architecture (ARM? POWER?) this is not true,
-		// then an explicit memory fence should be added here.
-		futex_wait(*this, value);
-		wait_count_.fetch_sub(1, std::memory_order_relaxed);
+		std::uint32_t old_value = value;
+		std::uint32_t new_value = value | bq_waiting;
+		if (compare_exchange_strong(old_value,
+					    new_value,
+					    std::memory_order_relaxed,
+					    std::memory_order_relaxed)
+		    || old_value == new_value)
+			futex_wait(*this, value);
 		return load();
 	}
 
 	void store_and_wake(std::uint32_t value)
 	{
-		store(value);
-		std::atomic_thread_fence(std::memory_order_seq_cst);
-		if (wait_count_.load(std::memory_order_relaxed))
+		value = exchange(value, std::memory_order_release);
+		if ((value & bq_status_mask) == bq_waiting)
 			wake();
 	}
 
@@ -134,13 +122,10 @@ public:
 	{
 		futex_wake(*this, INT32_MAX);
 	}
-
-private:
-	std::atomic<std::uint32_t> wait_count_ = ATOMIC_VAR_INIT(0);
 };
 
 template <typename Synch = default_synch>
-class bounded_queue_synch : public bounded_queue_ticket
+class bq_synch_slot : public bq_slot
 {
 public:
 	using lock_type = typename Synch::lock_type;
@@ -176,7 +161,7 @@ private:
 	cond_var_type cond_;
 };
 
-template <typename Value, typename Ticket = bounded_queue_busywait>
+template <typename Value, typename Ticket = bq_slot>
 class bounded_queue : non_copyable
 {
 public:
@@ -202,7 +187,7 @@ public:
 
 		ring_ = new (ring) ring_slot[size];
 		for (std::uint32_t i = 0; i < size; i++)
-			ring_[i].initialize(i);
+			ring_[i].initialize(i << bq_status_bits);
 	}
 
 	bounded_queue(bounded_queue &&other) noexcept
@@ -283,20 +268,22 @@ private:
 		}
 	}
 
-	void wait_tail(ring_slot &slot, std::uint64_t required_ticket)
+	void wait_tail(ring_slot &slot, std::uint64_t tail)
 	{
 		std::uint32_t current_ticket = slot.load();
-		while (current_ticket != std::uint32_t(required_ticket)) {
+		std::uint32_t required_ticket = tail << bq_status_bits;
+		while ((current_ticket & bq_ticket_mask) != required_ticket) {
 			current_ticket = slot.wait_and_load(current_ticket);
 		}
 	}
 
 	template <typename Backoff>
-	void wait_tail(ring_slot &slot, std::uint64_t required_ticket, Backoff backoff)
+	void wait_tail(ring_slot &slot, std::uint64_t tail, Backoff backoff)
 	{
 		bool waiting = false;
 		std::uint32_t current_ticket = slot.load();
-		while (current_ticket != std::uint32_t(required_ticket)) {
+		std::uint32_t required_ticket = tail << bq_status_bits;
+		while ((current_ticket & bq_ticket_mask) != required_ticket) {
 			if (waiting) {
 				current_ticket = slot.wait_and_load(current_ticket);
 			} else {
@@ -306,13 +293,14 @@ private:
 		}
 	}
 
-	bool wait_head(ring_slot &slot, std::uint64_t required_ticket)
+	bool wait_head(ring_slot &slot, std::uint64_t head)
 	{
 		std::uint32_t current_ticket = slot.load();
-		while (current_ticket != std::uint32_t(required_ticket)) {
+		std::uint32_t required_ticket = head << bq_status_bits;
+		while ((current_ticket & bq_ticket_mask) != required_ticket) {
 			if (is_closed()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
-				if (required_ticket >= tail)
+				if (head >= tail)
 					return false;
 			}
 			current_ticket = slot.wait_and_load(current_ticket);
@@ -321,14 +309,15 @@ private:
 	}
 
 	template <typename Backoff>
-	bool wait_head(ring_slot &slot, std::uint64_t required_ticket, Backoff backoff)
+	bool wait_head(ring_slot &slot, std::uint64_t head, Backoff backoff)
 	{
 		bool waiting = false;
 		std::uint32_t current_ticket = slot.load();
-		while (current_ticket != std::uint32_t(required_ticket)) {
+		std::uint32_t required_ticket = head << bq_status_bits;
+		while ((current_ticket & bq_ticket_mask) != required_ticket) {
 			if (is_closed()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
-				if (required_ticket >= tail)
+				if (head >= tail)
 					return false;
 			}
 			if (waiting) {
@@ -341,14 +330,14 @@ private:
 		return true;
 	}
 
-	void wake_head(ring_slot &slot, std::uint32_t new_ticket)
+	void wake_head(ring_slot &slot, std::uint32_t next_head)
 	{
-		slot.store_and_wake(new_ticket);
+		slot.store_and_wake(next_head << bq_status_bits);
 	}
 
-	void wake_tail(ring_slot &slot, std::uint32_t new_ticket)
+	void wake_tail(ring_slot &slot, std::uint32_t next_tail)
 	{
-		slot.store_and_wake(new_ticket);
+		slot.store_and_wake(next_tail << bq_status_bits);
 	}
 
 	ring_slot *ring_;
@@ -361,7 +350,7 @@ private:
 };
 
 template <typename ValueType>
-using default_bounded_queue = bounded_queue<ValueType, bounded_queue_busywait>;
+using default_bounded_queue = bounded_queue<ValueType, bq_slot>;
 
 } // namespace evenk
 
