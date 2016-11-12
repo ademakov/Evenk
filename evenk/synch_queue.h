@@ -36,11 +36,14 @@ template <typename Value, typename Synch = default_synch, typename Sequence = st
 class synch_queue : non_copyable
 {
 public:
+	using value_type = Value;
+	using reference = value_type &;
+	using const_reference = const value_type &;
+
 	using lock_type = typename Synch::lock_type;
 	using cond_var_type = typename Synch::cond_var_type;
 	using lock_owner_type = typename Synch::lock_owner_type;
 
-	using value_type = Value;
 	using sequence_type = Sequence;
 
 	synch_queue() noexcept : closed_(false)
@@ -111,7 +114,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	void push(const value_type &&value, Backoff... backoff)
+	void push(value_type &&value, Backoff... backoff)
 	{
 		auto status = wait_push(std::move(value), std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
@@ -119,13 +122,13 @@ public:
 	}
 
 	template <typename... Backoff>
-	queue_op_status wait_push(const value_type &&value, Backoff... backoff)
+	queue_op_status wait_push(value_type &&value, Backoff... backoff)
 	{
 		return try_push(std::move(value), std::forward<Backoff>(backoff)...);
 	}
 
 	template <typename... Backoff>
-	queue_op_status try_push(const value_type &&value, Backoff... backoff)
+	queue_op_status try_push(value_type &&value, Backoff... backoff)
 	{
 		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		return locked_push(std::move(value));
