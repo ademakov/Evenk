@@ -224,7 +224,7 @@ public:
 	template <typename... Backoff>
 	void push(value_type &&value, Backoff... backoff)
 	{
-		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
+		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[tail & mask_];
 		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
 		put_value(slot, tail, std::move(value));
@@ -233,7 +233,7 @@ public:
 	template <typename... Backoff>
 	void push(const value_type &value, Backoff... backoff)
 	{
-		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
+		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[tail & mask_];
 		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
 		put_value(slot, tail, value);
@@ -410,7 +410,7 @@ private:
 	bq_status
 	get_value(ring_slot &slot, std::uint64_t head, bq_status status, value_type &value)
 	{
-		if (status != bq_normal)
+		if (status == bq_invalid)
 			return status;
 
 		try {
