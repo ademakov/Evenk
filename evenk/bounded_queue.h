@@ -30,6 +30,7 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <thread>
+#include <type_traits>
 
 #include "backoff.h"
 #include "basic.h"
@@ -165,13 +166,13 @@ template <typename Value, typename Ticket = bq_slot>
 class bounded_queue : non_copyable
 {
 public:
+	using value_type = Value;
+	using reference = value_type &;
+	using const_reference = const value_type &;
+
 #if 0
 	static_assert(std::is_nothrow_default_constructible<Value>::value,
 		      "bounded_queue requires values with nothrow default constructor");
-	static_assert(std::is_nothrow_copy_assignable<Value>::value,
-			"bounded_queue requires values with nothrow copy assignment");
-	static_assert(std::is_nothrow_move_assignable<Value>::value,
-		      "bounded_queue requires values with nothrow move assignment");
 #endif
 
 	bounded_queue(std::uint32_t size)
@@ -221,41 +222,43 @@ public:
 	}
 
 	template <typename... Backoff>
-	void push(Value &&value, Backoff... backoff)
+	void push(value_type &&value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
 		ring_slot &slot = ring_[tail & mask_];
 		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
-		slot.value = std::move(value);
-		wake_head(slot, tail + 1);
+		put_value(slot, tail, std::move(value));
 	}
 
 	template <typename... Backoff>
-	void push(const Value &value, Backoff... backoff)
+	void push(const value_type &value, Backoff... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_seq_cst);
 		ring_slot &slot = ring_[tail & mask_];
 		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
-		slot.value = value;
-		wake_head(slot, tail + 1);
+		put_value(slot, tail, value);
 	}
 
 	template <typename... Backoff>
-	queue_op_status wait_pop(Value &value, Backoff... backoff)
+	queue_op_status wait_pop(value_type &value, Backoff... backoff)
 	{
 		const std::uint64_t head = head_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[head & mask_];
-		if (!wait_head(slot, head + 1, std::forward<Backoff>(backoff)...))
-			return queue_op_status::closed;
-		value = std::move(slot.value);
-		wake_tail(slot, head + mask_ + 1);
-		return queue_op_status::success;
+		for (;;) {
+			bq_status status
+				= wait_head(slot, head + 1, std::forward<Backoff>(backoff)...);
+			if (status == bq_closed)
+				return queue_op_status::closed;
+			status = get_value(slot, head, status, value);
+			if (status == bq_normal)
+				return queue_op_status::success;
+		}
 	}
 
 private:
 	struct alignas(cache_line_size) ring_slot : public Ticket
 	{
-		Value value;
+		value_type value;
 	};
 
 	void destroy()
@@ -293,7 +296,7 @@ private:
 		}
 	}
 
-	bool wait_head(ring_slot &slot, std::uint64_t head)
+	bq_status wait_head(ring_slot &slot, std::uint64_t head)
 	{
 		std::uint32_t current_ticket = slot.load();
 		std::uint32_t required_ticket = head << bq_status_bits;
@@ -301,15 +304,15 @@ private:
 			if (is_closed()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
 				if (head >= tail)
-					return false;
+					return bq_closed;
 			}
 			current_ticket = slot.wait_and_load(current_ticket);
 		}
-		return true;
+		return bq_status(current_ticket & bq_status_mask);
 	}
 
 	template <typename Backoff>
-	bool wait_head(ring_slot &slot, std::uint64_t head, Backoff backoff)
+	bq_status wait_head(ring_slot &slot, std::uint64_t head, Backoff backoff)
 	{
 		bool waiting = false;
 		std::uint32_t current_ticket = slot.load();
@@ -318,7 +321,7 @@ private:
 			if (is_closed()) {
 				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
 				if (head >= tail)
-					return false;
+					return bq_closed;
 			}
 			if (waiting) {
 				current_ticket = slot.wait_and_load(current_ticket);
@@ -327,17 +330,97 @@ private:
 				current_ticket = slot.load();
 			}
 		}
-		return true;
+		return bq_status(current_ticket & bq_status_mask);
 	}
 
-	void wake_head(ring_slot &slot, std::uint32_t next_head)
+	void wake_tail(ring_slot &slot, std::uint32_t tail)
 	{
-		slot.store_and_wake(next_head << bq_status_bits);
+		slot.store_and_wake((tail + 1) << bq_status_bits);
 	}
 
-	void wake_tail(ring_slot &slot, std::uint32_t next_tail)
+	void wake_tail(ring_slot &slot, std::uint32_t tail, bq_status status)
 	{
-		slot.store_and_wake(next_tail << bq_status_bits);
+		slot.store_and_wake(((tail + 1) << bq_status_bits) | status);
+	}
+
+	void wake_head(ring_slot &slot, std::uint32_t head)
+	{
+		slot.store_and_wake((head + mask_ + 1) << bq_status_bits);
+	}
+
+	template <typename V = value_type,
+		  typename std::enable_if<std::is_nothrow_copy_assignable<V>::value>::type
+			  * = nullptr>
+	void put_value(ring_slot &slot, std::uint64_t tail, const value_type &value)
+	{
+		slot.value = value;
+		wake_tail(slot, tail);
+	}
+
+	template <typename V = value_type,
+		  typename std::enable_if<not std::is_nothrow_copy_assignable<V>::value>::type
+			  * = nullptr>
+	void put_value(ring_slot &slot, std::uint64_t tail, const value_type &value)
+	{
+		try {
+			slot.value = value;
+		} catch (...) {
+			wake_tail(slot, tail, bq_invalid);
+			throw;
+		}
+		wake_tail(slot, tail);
+	}
+
+	template <typename V = value_type,
+		  typename std::enable_if<std::is_nothrow_move_assignable<V>::value>::type
+			  * = nullptr>
+	void put_value(ring_slot &slot, std::uint64_t tail, value_type &&value)
+	{
+		slot.value = std::move(value);
+		wake_tail(slot, tail);
+	}
+
+	template <typename V = value_type,
+		  typename std::enable_if<not std::is_nothrow_move_assignable<V>::value>::type
+			  * = nullptr>
+	void put_value(ring_slot &slot, std::uint64_t tail, value_type &&value)
+	{
+		try {
+			slot.value = std::move(value);
+		} catch (...) {
+			wake_tail(slot, tail, bq_invalid);
+			throw;
+		}
+		wake_tail(slot, tail);
+	}
+
+	template <typename V = value_type,
+		  typename std::enable_if<std::is_nothrow_move_assignable<V>::value>::type
+			  * = nullptr>
+	bq_status get_value(ring_slot &slot, std::uint64_t head, bq_status, value_type &value)
+	{
+		value = std::move(slot.value);
+		wake_head(slot, head);
+		return bq_normal;
+	}
+
+	template <typename V = value_type,
+		  typename std::enable_if<not std::is_nothrow_move_assignable<V>::value>::type
+			  * = nullptr>
+	bq_status
+	get_value(ring_slot &slot, std::uint64_t head, bq_status status, value_type &value)
+	{
+		if (status != bq_normal)
+			return status;
+
+		try {
+			value = std::move(slot.value);
+		} catch (...) {
+			wake_head(slot, head);
+			throw;
+		}
+		wake_head(slot, head);
+		return bq_normal;
 	}
 
 	ring_slot *ring_;
