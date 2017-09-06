@@ -336,25 +336,22 @@ private:
 // Synchronization Traits
 //
 
-class std_synch
+struct std_synch
 {
-public:
 	using lock_type = std::mutex;
 	using cond_var_type = std::condition_variable;
 	using lock_owner_type = std::unique_lock<std::mutex>;
 };
 
-class posix_synch
+struct posix_synch
 {
-public:
 	using lock_type = posix_mutex;
 	using cond_var_type = posix_cond_var;
 	using lock_owner_type = std::unique_lock<posix_mutex>;
 };
 
-class futex_synch
+struct futex_synch
 {
-public:
 	using lock_type = futex_lock;
 	using cond_var_type = futex_cond_var;
 	using lock_owner_type = lock_guard<futex_lock>;
