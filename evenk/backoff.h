@@ -1,7 +1,7 @@
 //
 // Busy-Waiting Backoff Utilities
 //
-// Copyright (c) 2015-2016  Aleksey Demakov
+// Copyright (c) 2015-2017  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -69,18 +69,21 @@ struct nanosleep
 // Back-off policies for busy waiting.
 //
 
-class no_backoff
+//
+// The return value for operator() is true if backoff ceiling is reached and
+// false otherwise.
+//
+
+struct no_backoff
 {
-public:
 	bool operator()()
 	{
 		return true;
 	}
 };
 
-class yield_backoff
+struct yield_backoff
 {
-public:
 	bool operator()()
 	{
 		std::this_thread::yield();
@@ -111,21 +114,20 @@ template <typename Pause>
 class linear_backoff
 {
 public:
-	linear_backoff(std::uint32_t ceiling, std::uint32_t step) noexcept
+	linear_backoff(std::uint32_t ceiling, std::uint32_t step = 1) noexcept
 		: ceiling_{ceiling}, step_{step}, backoff_{0}
 	{
 	}
 
 	bool operator()()
 	{
-		if (backoff_ >= ceiling_) {
-			pause_(ceiling_);
+		pause_(backoff_);
+		backoff_ += step_;
+		if (backoff_ > ceiling_) {
+			backoff_ = ceiling_;
 			return true;
-		} else {
-			pause_(backoff_);
-			backoff_ += step_;
-			return false;
 		}
+		return false;
 	}
 
 private:
