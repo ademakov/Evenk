@@ -147,14 +147,13 @@ public:
 
 	bool operator()()
 	{
-		if (backoff_ >= ceiling_) {
-			pause_(ceiling_);
+		pause_(backoff_);
+		backoff_ += backoff_ + 1;
+		if (backoff_ > ceiling_) {
+			backoff_ = ceiling_;
 			return true;
-		} else {
-			pause_(backoff_);
-			backoff_ += backoff_ + 1;
-			return false;
 		}
+		return false;
 	}
 
 private:
