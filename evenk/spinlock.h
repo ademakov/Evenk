@@ -1,7 +1,7 @@
 //
 // Spin Locks
 //
-// Copyright (c) 2015-2016  Aleksey Demakov
+// Copyright (c) 2015-2017  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -36,9 +36,7 @@ namespace evenk {
 class spin_lock : non_copyable
 {
 public:
-	constexpr spin_lock() noexcept = default;
-
-	void lock()
+	void lock() noexcept
 	{
 		lock(no_backoff{});
 	}
@@ -50,12 +48,12 @@ public:
 			backoff();
 	}
 
-	bool try_lock()
+	bool try_lock() noexcept
 	{
 		return !lock_.test_and_set(std::memory_order_acquire);
 	}
 
-	void unlock()
+	void unlock() noexcept
 	{
 		lock_.clear(std::memory_order_release);
 	}
@@ -67,9 +65,7 @@ private:
 class tatas_lock : non_copyable
 {
 public:
-	constexpr tatas_lock() noexcept = default;
-
-	void lock()
+	void lock() noexcept
 	{
 		lock(no_backoff{});
 	}
@@ -84,12 +80,12 @@ public:
 		}
 	}
 
-	bool try_lock()
+	bool try_lock() noexcept
 	{
 		return !lock_.exchange(true, std::memory_order_acquire);
 	}
 
-	void unlock()
+	void unlock() noexcept
 	{
 		lock_.store(false, std::memory_order_release);
 	}
@@ -101,15 +97,13 @@ private:
 class ticket_lock : non_copyable
 {
 public:
-	constexpr ticket_lock() noexcept = default;
-
-	void lock()
+	void lock() noexcept
 	{
 		lock(no_backoff{});
 	}
 
 	template <typename Backoff>
-	void lock(Backoff backoff)
+	void lock(Backoff backoff) noexcept
 	{
 		base_type tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		for (;;) {
@@ -120,7 +114,7 @@ public:
 		}
 	}
 
-	bool try_lock()
+	bool try_lock() noexcept
 	{
 		base_type head = head_.load(std::memory_order_acquire);
 		base_type tail = tail_.load(std::memory_order_relaxed);
@@ -129,7 +123,7 @@ public:
 				  tail, tail + 1, std::memory_order_relaxed);
 	}
 
-	void unlock()
+	void unlock() noexcept
 	{
 		head_.fetch_add(1, std::memory_order_release);
 	}
