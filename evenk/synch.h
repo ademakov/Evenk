@@ -1,7 +1,7 @@
 //
 // Synchronization Primitives
 //
-// Copyright (c) 2015-2016  Aleksey Demakov
+// Copyright (c) 2015-2017  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -56,30 +56,22 @@ public:
 
 	void lock()
 	{
-		int ret = pthread_mutex_lock(&mutex_);
-		if (ret)
-			throw_system_error(ret, "pthread_mutex_lock()");
+		int rc = pthread_mutex_lock(&mutex_);
+		if (rc)
+			throw_system_error(rc, "pthread_mutex_lock()");
 	}
 
-	bool try_lock()
+	bool try_lock() noexcept
 	{
-		int ret = pthread_mutex_trylock(&mutex_);
-		if (ret) {
-			if (ret != EBUSY)
-				throw_system_error(ret, "pthread_mutex_trylock()");
-			return false;
-		}
-		return true;
+		return pthread_mutex_trylock(&mutex_) == 0;
 	}
 
-	void unlock()
+	void unlock() noexcept
 	{
-		int ret = pthread_mutex_unlock(&mutex_);
-		if (ret)
-			throw_system_error(ret, "pthread_mutex_unlock()");
+		pthread_mutex_unlock(&mutex_);
 	}
 
-	native_handle_type native_handle()
+	native_handle_type native_handle() noexcept
 	{
 		return &mutex_;
 	}
@@ -95,17 +87,17 @@ public:
 
 	constexpr futex_lock() noexcept = default;
 
-	void lock()
+	void lock() noexcept
 	{
 		lock(no_backoff{});
 	}
 
 	template <typename Backoff>
-	void lock(Backoff backoff)
+	void lock(Backoff backoff) noexcept
 	{
-		for (std::uint32_t value = 0; !futex_.compare_exchange_strong(
-			     value, 1, std::memory_order_acquire, std::memory_order_relaxed);
-		     value = 0) {
+		std::uint32_t value = 0;
+		while (!futex_.compare_exchange_strong(
+			value, 1, std::memory_order_acquire, std::memory_order_relaxed)) {
 			if (backoff()) {
 				if (value == 2
 				    || futex_.exchange(2, std::memory_order_acquire)) {
@@ -115,17 +107,18 @@ public:
 				}
 				break;
 			}
+			value = 0;
 		}
 	}
 
-	bool try_lock()
+	bool try_lock() noexcept
 	{
 		std::uint32_t value = 0;
 		return futex_.compare_exchange_strong(
 			value, 1, std::memory_order_acquire, std::memory_order_relaxed);
 	}
 
-	void unlock()
+	void unlock() noexcept
 	{
 		if (futex_.fetch_sub(1, std::memory_order_release) != 1) {
 			futex_.store(0, std::memory_order_relaxed);
@@ -133,7 +126,7 @@ public:
 		}
 	}
 
-	native_handle_type native_handle()
+	native_handle_type native_handle() noexcept
 	{
 		return futex_;
 	}
@@ -173,12 +166,13 @@ public:
 	{
 	}
 
-	lock_guard(mutex_type &mutex, std::try_to_lock_t) : mutex_(&mutex), owns_lock_(false)
+	lock_guard(mutex_type &mutex, std::try_to_lock_t) noexcept
+		: mutex_(&mutex), owns_lock_(false)
 	{
 		try_lock();
 	}
 
-	~lock_guard()
+	~lock_guard() noexcept
 	{
 		if (owns_lock_)
 			mutex_->unlock();
@@ -217,12 +211,12 @@ public:
 		owns_lock_ = false;
 	}
 
-	mutex_type *mutex()
+	mutex_type *mutex() noexcept
 	{
 		return mutex_;
 	}
 
-	bool owns_lock()
+	bool owns_lock() const noexcept
 	{
 		return owns_lock_;
 	}
@@ -248,28 +242,24 @@ public:
 		pthread_cond_destroy(&cond_);
 	}
 
-	void wait(std::unique_lock<posix_mutex> &lock)
+	void wait(std::unique_lock<posix_mutex> &lock) noexcept
 	{
-		int ret = pthread_cond_wait(&cond_, lock.mutex()->native_handle());
-		if (ret)
-			throw_system_error(ret, "pthread_cond_wait()");
+		int rc = pthread_cond_wait(&cond_, lock.mutex()->native_handle());
+		if (rc)
+			throw_system_error(rc, "pthread_cond_wait()");
 	}
 
-	void notify_one()
+	void notify_one() noexcept
 	{
-		int ret = pthread_cond_signal(&cond_);
-		if (ret)
-			throw_system_error(ret, "pthread_cond_signal()");
+		pthread_cond_signal(&cond_);
 	}
 
-	void notify_all()
+	void notify_all() noexcept
 	{
-		int ret = pthread_cond_broadcast(&cond_);
-		if (ret)
-			throw_system_error(ret, "pthread_cond_broadcast()");
+		pthread_cond_broadcast(&cond_);
 	}
 
-	native_handle_type native_handle()
+	native_handle_type native_handle() noexcept
 	{
 		return &cond_;
 	}
@@ -283,13 +273,17 @@ class futex_cond_var : non_copyable
 public:
 	constexpr futex_cond_var() noexcept = default;
 
-	void wait(lock_guard<futex_lock> &guard)
+	void wait(lock_guard<futex_lock> &guard) noexcept
 	{
 		futex_lock *owner = guard.mutex();
 		if (owner_ != nullptr && owner_ != owner)
+#if 0
 			throw std::invalid_argument(
 				"different locks used for the same condition variable.");
-		owner_.store(owner, std::memory_order_relaxed);
+#else
+			std::terminate();
+#endif
+			owner_.store(owner, std::memory_order_relaxed);
 
 		count_.fetch_add(1, std::memory_order_relaxed);
 		std::atomic_thread_fence(std::memory_order_acq_rel);
@@ -305,14 +299,14 @@ public:
 			futex_wait(owner_futex, 2);
 	}
 
-	void notify_one()
+	void notify_one() noexcept
 	{
 		futex_.fetch_add(1, std::memory_order_acquire);
 		if (count_.load(std::memory_order_relaxed))
 			futex_wake(futex_, 1);
 	}
 
-	void notify_all()
+	void notify_all() noexcept
 	{
 		futex_.fetch_add(1, std::memory_order_acquire);
 		if (count_.load(std::memory_order_relaxed)) {
