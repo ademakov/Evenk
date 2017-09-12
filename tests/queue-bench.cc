@@ -89,12 +89,12 @@ bench(unsigned nthreads)
 	}
 	{
 		synch_queue<std::string, futex_synch> futex_queue;
-		linear_backoff<cpu_cycle> linear_cycle_backoff(100000, 100);
+		linear_backoff<cpu_cycle, 100000, 100> linear_cycle_backoff;
 		BENCH2(futex_queue, linear_cycle_backoff);
 	}
 	{
 		synch_queue<std::string, futex_synch> futex_queue;
-		linear_backoff<cpu_relax> linear_relax_backoff(1000, 1);
+		linear_backoff<cpu_relax, 1000, 1> linear_relax_backoff;
 		BENCH2(futex_queue, linear_relax_backoff);
 	}
 	{
@@ -138,13 +138,13 @@ bench(unsigned nthreads)
 	{
 		bounded_queue<std::string, bq_synch_slot<futex_synch>>
 			bounded_futex_synch_queue(1024);
-		linear_backoff<cpu_cycle> linear_cycle_backoff(100000, 100);
+		linear_backoff<cpu_cycle, 100000, 100> linear_cycle_backoff;
 		BENCH2(bounded_futex_synch_queue, linear_cycle_backoff);
 	}
 	{
 		bounded_queue<std::string, bq_synch_slot<futex_synch>>
 			bounded_futex_synch_queue(1024);
-		linear_backoff<cpu_relax> linear_relax_backoff(1000, 1);
+		linear_backoff<cpu_relax, 1000, 1> linear_relax_backoff;
 		BENCH2(bounded_futex_synch_queue, linear_relax_backoff);
 	}
 	{
@@ -159,12 +159,12 @@ bench(unsigned nthreads)
 	}
 	{
 		bounded_queue<std::string, bq_futex_slot> bounded_futex_queue(1024);
-		linear_backoff<cpu_cycle> linear_cycle_backoff(100000, 100);
+		linear_backoff<cpu_cycle, 100000, 100> linear_cycle_backoff;
 		BENCH2(bounded_futex_queue, linear_cycle_backoff);
 	}
 	{
 		bounded_queue<std::string, bq_futex_slot> bounded_futex_queue(1024);
-		linear_backoff<cpu_relax> linear_relax_backoff(1000, 1);
+		linear_backoff<cpu_relax, 1000, 1> linear_relax_backoff;
 		BENCH2(bounded_futex_queue, linear_relax_backoff);
 	}
 	{
