@@ -16,23 +16,23 @@ evenk::futex_lock futex_lock;
 evenk::no_backoff no_backoff;
 evenk::yield_backoff yield_backoff;
 
-evenk::const_backoff<evenk::cpu_cycle> const_cycle_backoff(40);
-evenk::linear_backoff<evenk::cpu_cycle> linear_cycle_backoff(100, 20);
-evenk::exponential_backoff<evenk::cpu_cycle> exponential_cycle_backoff(40);
-evenk::proportional_backoff<evenk::cpu_cycle> proportional_cycle_backoff(20);
+evenk::const_backoff<evenk::cpu_cycle, 40> const_cycle_backoff;
+evenk::linear_backoff<evenk::cpu_cycle, 100, 20> linear_cycle_backoff;
+evenk::exponential_backoff<evenk::cpu_cycle, 40> exponential_cycle_backoff;
+evenk::proportional_backoff<evenk::cpu_cycle, 20u> proportional_cycle_backoff;
 
-evenk::const_backoff<evenk::cpu_relax> const_relax_backoff(1);
-evenk::const_backoff<evenk::cpu_relax> const_relax_x2_backoff(2);
-evenk::const_backoff<evenk::cpu_relax> const_relax_x4_backoff(4);
-evenk::const_backoff<evenk::cpu_relax> const_relax_x6_backoff(6);
-evenk::const_backoff<evenk::cpu_relax> const_relax_x8_backoff(8);
-evenk::linear_backoff<evenk::cpu_relax> linear_relax_backoff(10, 2);
-evenk::exponential_backoff<evenk::cpu_relax> exponential_relax_backoff(5);
-evenk::proportional_backoff<evenk::cpu_relax> proportional_relax_backoff(1);
+evenk::const_backoff<evenk::cpu_relax, 1> const_relax_backoff;
+evenk::const_backoff<evenk::cpu_relax, 2> const_relax_x2_backoff;
+evenk::const_backoff<evenk::cpu_relax, 4> const_relax_x4_backoff;
+evenk::const_backoff<evenk::cpu_relax, 6> const_relax_x6_backoff;
+evenk::const_backoff<evenk::cpu_relax, 8> const_relax_x8_backoff;
+evenk::linear_backoff<evenk::cpu_relax, 10, 2> linear_relax_backoff;
+evenk::exponential_backoff<evenk::cpu_relax, 5> exponential_relax_backoff;
+evenk::proportional_backoff<evenk::cpu_relax, 1u> proportional_relax_backoff;
 
-evenk::composite_backoff<evenk::linear_backoff<evenk::cpu_cycle>, evenk::yield_backoff>
+evenk::composite_backoff<evenk::linear_backoff<evenk::cpu_cycle, 100, 20>, evenk::yield_backoff>
 	cycle_yield_backoff(linear_cycle_backoff, yield_backoff);
-evenk::composite_backoff<evenk::linear_backoff<evenk::cpu_relax>, evenk::yield_backoff>
+evenk::composite_backoff<evenk::linear_backoff<evenk::cpu_relax, 10, 2>, evenk::yield_backoff>
 	relax_yield_backoff(linear_relax_backoff, yield_backoff);
 
 template <typename Lock, typename... Backoff>

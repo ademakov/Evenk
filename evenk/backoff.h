@@ -91,90 +91,62 @@ struct yield_backoff
 	}
 };
 
-template <typename Pause>
-class const_backoff : Pause
+template <typename Pause, std::uint32_t count>
+struct const_backoff : Pause
 {
-public:
-	const_backoff(std::uint32_t backoff) noexcept : backoff_{backoff}
+	bool operator()() noexcept
 	{
-	}
-
-	bool operator()(std::uint32_t factor = 1) noexcept
-	{
-		Pause::operator()(backoff_ * factor);
+		Pause::operator()(count);
 		return false;
 	}
-
-private:
-	std::uint32_t backoff_;
 };
 
-template <typename Pause>
+template <typename Pause, std::uint32_t ceiling, std::uint32_t step = 1>
 class linear_backoff : Pause
 {
 public:
-	linear_backoff(std::uint32_t ceiling, std::uint32_t step = 1) noexcept
-		: ceiling_{ceiling}, step_{step}, backoff_{0}
-	{
-	}
-
 	bool operator()() noexcept
 	{
-		Pause::operator()(backoff_);
-		backoff_ += step_;
-		if (backoff_ > ceiling_) {
-			backoff_ = ceiling_;
+		Pause::operator()(count_);
+		count_ += step;
+		if (count_ > ceiling) {
+			count_ = ceiling;
 			return true;
 		}
 		return false;
 	}
 
 private:
-	const std::uint32_t ceiling_;
-	const std::uint32_t step_;
-	std::uint32_t backoff_;
+	std::uint32_t count_ = 0;
 };
 
-template <typename Pause>
+template <typename Pause, std::uint32_t ceiling>
 class exponential_backoff : Pause
 {
 public:
-	exponential_backoff(std::uint32_t ceiling) noexcept : ceiling_{ceiling}, backoff_{0}
-	{
-	}
-
 	bool operator()() noexcept
 	{
-		Pause::operator()(backoff_);
-		backoff_ += backoff_ + 1;
-		if (backoff_ > ceiling_) {
-			backoff_ = ceiling_;
+		Pause::operator()(count_);
+		count_ += count_ + 1;
+		if (count_ > ceiling) {
+			count_ = ceiling;
 			return true;
 		}
 		return false;
 	}
 
 private:
-	const std::uint32_t ceiling_;
-	std::uint32_t backoff_;
+	std::uint32_t count_ = 0;
 };
 
-template <typename Pause>
-class proportional_backoff : Pause
+template <typename Pause, std::uint32_t count>
+struct proportional_backoff : Pause
 {
-public:
-	proportional_backoff(std::uint32_t backoff) noexcept : backoff_{backoff}
-	{
-	}
-
 	bool operator()(std::uint32_t factor) noexcept
 	{
-		Pause::operator()(backoff_ * factor);
+		Pause::operator()(count *factor);
 		return false;
 	}
-
-private:
-	std::uint32_t backoff_;
 };
 
 template <typename Backoff>
@@ -184,9 +156,9 @@ proportional_adapter(Backoff &backoff, std::uint32_t) noexcept
 	return backoff();
 }
 
-template <typename Pause>
+template <typename Pause, std::uint32_t count>
 bool
-proportional_adapter(proportional_backoff<Pause> &backoff, std::uint32_t factor) noexcept
+proportional_adapter(proportional_backoff<Pause, count> &backoff, std::uint32_t factor) noexcept
 {
 	return backoff(factor);
 }
