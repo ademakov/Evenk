@@ -55,34 +55,42 @@ public:
 		std::swap(queue_, other.queue_);
 	}
 
-	void close()
+	//
+	// State operations
+	//
+
+	void close() noexcept
 	{
 		lock_owner_type guard(lock_);
 		closed_ = true;
 		cond_.notify_all();
 	}
 
-	bool is_closed()
+	bool is_closed() const noexcept
 	{
 		lock_owner_type guard(lock_);
 		return closed_;
 	}
 
-	bool is_empty()
+	bool is_empty() const noexcept
 	{
 		lock_owner_type guard(lock_);
 		return queue_.empty();
 	}
 
-	bool is_full()
+	bool is_full() const noexcept
 	{
 		return false;
 	}
 
-	bool is_lock_free() const
+	static bool is_lock_free() noexcept
 	{
 		return false;
 	}
+
+	//
+	// Basic operations
+	//
 
 	template <typename... Backoff>
 	void push(const value_type &value, Backoff... backoff)
@@ -90,27 +98,6 @@ public:
 		auto status = wait_push(value, std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
 			throw status;
-	}
-
-	template <typename... Backoff>
-	queue_op_status wait_push(const value_type &value, Backoff... backoff)
-	{
-		return try_push(value, std::forward<Backoff>(backoff)...);
-	}
-
-	template <typename... Backoff>
-	queue_op_status try_push(const value_type &value, Backoff... backoff)
-	{
-		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
-		return locked_push(value);
-	}
-
-	queue_op_status nonblocking_push(const value_type &value)
-	{
-		lock_owner_type guard(lock_, std::try_to_lock);
-		if (!guard.owns_lock())
-			return queue_op_status::busy;
-		return locked_push(value);
 	}
 
 	template <typename... Backoff>
@@ -122,27 +109,6 @@ public:
 	}
 
 	template <typename... Backoff>
-	queue_op_status wait_push(value_type &&value, Backoff... backoff)
-	{
-		return try_push(std::move(value), std::forward<Backoff>(backoff)...);
-	}
-
-	template <typename... Backoff>
-	queue_op_status try_push(value_type &&value, Backoff... backoff)
-	{
-		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
-		return locked_push(std::move(value));
-	}
-
-	queue_op_status nonblocking_push(value_type &&value)
-	{
-		lock_owner_type guard(lock_, std::try_to_lock);
-		if (!guard.owns_lock())
-			return queue_op_status::busy;
-		return locked_push(std::move(value));
-	}
-
-	template <typename... Backoff>
 	value_type value_pop(Backoff... backoff)
 	{
 		value_type value;
@@ -150,6 +116,22 @@ public:
 		if (status != queue_op_status::success)
 			throw status;
 		return std::move(value);
+	}
+
+	//
+	// Waiting operations
+	//
+
+	template <typename... Backoff>
+	queue_op_status wait_push(const value_type &value, Backoff... backoff)
+	{
+		return try_push(value, std::forward<Backoff>(backoff)...);
+	}
+
+	template <typename... Backoff>
+	queue_op_status wait_push(value_type &&value, Backoff... backoff)
+	{
+		return try_push(std::move(value), std::forward<Backoff>(backoff)...);
 	}
 
 	template <typename... Backoff>
@@ -164,11 +146,50 @@ public:
 		return status;
 	}
 
+	//
+	// Non-waiting operations
+	//
+
+	template <typename... Backoff>
+	queue_op_status try_push(const value_type &value, Backoff... backoff)
+	{
+		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
+		return locked_push(value);
+	}
+
+	template <typename... Backoff>
+	queue_op_status try_push(value_type &&value, Backoff... backoff)
+	{
+		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
+		return locked_push(std::move(value));
+	}
+
 	template <typename... Backoff>
 	queue_op_status try_pop(value_type &value, Backoff... backoff)
 	{
 		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		return locked_pop(value);
+	}
+
+#if ENABLE_QUEUE_NONBLOCKING_OPS
+	//
+	// Non-blocking operations
+	//
+
+	queue_op_status nonblocking_push(const value_type &value)
+	{
+		lock_owner_type guard(lock_, std::try_to_lock);
+		if (!guard.owns_lock())
+			return queue_op_status::busy;
+		return locked_push(value);
+	}
+
+	queue_op_status nonblocking_push(value_type &&value)
+	{
+		lock_owner_type guard(lock_, std::try_to_lock);
+		if (!guard.owns_lock())
+			return queue_op_status::busy;
+		return locked_push(std::move(value));
 	}
 
 	queue_op_status nonblocking_pop(value_type &value)
@@ -178,6 +199,7 @@ public:
 			return queue_op_status::busy;
 		return locked_pop(value);
 	}
+#endif // ENABLE_QUEUE_NONBLOCKING_OPS
 
 private:
 	queue_op_status locked_push(const value_type &value)
@@ -202,8 +224,11 @@ private:
 
 	queue_op_status locked_pop(value_type &value)
 	{
-		if (queue_.empty())
-			return closed_ ? queue_op_status::closed : queue_op_status::empty;
+		if (queue_.empty()) {
+			if (closed_)
+				return queue_op_status::closed;
+			return queue_op_status::empty;
+		}
 
 		value = std::move(queue_.front());
 		queue_.pop_front();
@@ -211,7 +236,7 @@ private:
 	}
 
 	bool closed_;
-	lock_type lock_;
+	mutable lock_type lock_;
 	cond_var_type cond_;
 	sequence_type queue_;
 };
