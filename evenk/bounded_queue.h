@@ -1,7 +1,7 @@
 //
 // Fast Bounded Concurrent Queue
 //
-// Copyright (c) 2015  Aleksey Demakov
+// Copyright (c) 2015-2017  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -42,17 +42,22 @@ namespace evenk {
 
 inline namespace detail {
 
-enum bq_status : std::uint32_t {
-	bq_normal = 0,
-	bq_waiting = 1,
-	bq_invalid = 2,
-	bq_closed = 3,
+// Status flags of a bounded queue slot.
+enum bounded_queue_status : std::uint32_t {
+	// the slot is empty
+	bounded_queue_empty = 0,
+	// the slot contains a value
+	bounded_queue_valid = 1,
+	// the slot is closed
+	bounded_queue_closed = 2,
+	// the slot contains invalid value
+	bounded_queue_failed = 4,
+	// there is a waiting thread on the slot (if futex-based)
+	bounded_queue_waiting = 8,
 };
 
-constexpr std::uint32_t bq_status_bits = 2;
-constexpr std::uint32_t bq_ticket_step = 1 << bq_status_bits;
-constexpr std::uint32_t bq_status_mask = bq_ticket_step - 1;
-constexpr std::uint32_t bq_ticket_mask = ~bq_status_mask;
+// The minimum queue size that allows combined slot state and ticket encoding.
+constexpr std::uint32_t bounded_queue_minsize = 16;
 
 } // namespace detail
 
@@ -61,9 +66,25 @@ class bq_slot : protected std::atomic<std::uint32_t>
 public:
 	using base = std::atomic<std::uint32_t>;
 
-	void initialize(std::uint32_t value)
+	void open(std::uint32_t index)
 	{
-		base::store(value, std::memory_order_relaxed);
+		store(index, std::memory_order_relaxed);
+	}
+
+	void close(std::uint32_t index)
+	{
+		std::uint32_t value = base::load(std::memory_order_relaxed);
+		for (;;) {
+			std::uint32_t round_value = value - index;
+			round_value |= bounded_queue_closed;
+
+			if (compare_exchange_weak(value,
+						  round_value + index,
+						  std::memory_order_relaxed,
+						  std::memory_order_relaxed)) {
+				break;
+			}
+		}
 	}
 
 	std::uint32_t load() const
@@ -71,57 +92,70 @@ public:
 		return base::load(std::memory_order_acquire);
 	}
 
-	std::uint32_t wait_and_load(std::uint32_t)
+	std::uint32_t wait_and_load(std::uint32_t /*index*/, std::uint32_t /*value*/)
 	{
-		return load();
+		return base::load(std::memory_order_relaxed);
 	}
 
-	void store_and_wake(std::uint32_t value)
+	void store_and_wake(std::uint32_t /*index*/, std::uint32_t value)
 	{
-		base::store(value, std::memory_order_release);
-	}
-
-	void wake()
-	{
+		store(value, std::memory_order_release);
 	}
 };
 
 class bq_yield_slot : public bq_slot
 {
 public:
-	std::uint32_t wait_and_load(std::uint32_t)
+	std::uint32_t wait_and_load(std::uint32_t /*index*/, std::uint32_t /*value*/)
 	{
 		std::this_thread::yield();
-		return load();
+		return base::load(std::memory_order_relaxed);
 	}
 };
 
 class bq_futex_slot : public bq_slot
 {
 public:
-	std::uint32_t wait_and_load(std::uint32_t value)
+	void close(std::uint32_t index)
 	{
-		std::uint32_t old_value = value;
-		std::uint32_t new_value = value | bq_waiting;
-		if (compare_exchange_strong(old_value,
-					    new_value,
+		std::uint32_t value = base::load(std::memory_order_relaxed);
+		for (;;) {
+			std::uint32_t round_value = value - index;
+			round_value |= bounded_queue_closed;
+
+			if (compare_exchange_weak(value,
+						  round_value + index,
+						  std::memory_order_relaxed,
+						  std::memory_order_relaxed)) {
+				if ((round_value & bounded_queue_waiting) != 0)
+					futex_wake(*this, INT32_MAX);
+				break;
+			}
+		}
+	}
+
+	std::uint32_t wait_and_load(std::uint32_t index, std::uint32_t value)
+	{
+		std::uint32_t wait_value = value - index;
+		wait_value |= bounded_queue_waiting;
+		wait_value += index;
+
+		if (compare_exchange_strong(value,
+					    wait_value,
 					    std::memory_order_relaxed,
 					    std::memory_order_relaxed)
-		    || old_value == new_value)
-			futex_wait(*this, value);
-		return load();
+		    || value == wait_value) {
+			futex_wait(*this, wait_value);
+			return base::load(std::memory_order_relaxed);
+		}
+		return value;
 	}
 
-	void store_and_wake(std::uint32_t value)
+	void store_and_wake(std::uint32_t index, std::uint32_t value)
 	{
 		value = exchange(value, std::memory_order_release);
-		if ((value & bq_status_mask) == bq_waiting)
-			wake();
-	}
-
-	void wake()
-	{
-		futex_wake(*this, INT32_MAX);
+		if (((value - index) & bounded_queue_waiting) != 0)
+			futex_wake(*this, INT32_MAX);
 	}
 };
 
@@ -133,7 +167,16 @@ public:
 	using cond_var_type = typename Synch::cond_var_type;
 	using lock_owner_type = typename Synch::lock_owner_type;
 
-	std::uint32_t wait_and_load(std::uint32_t value)
+	void close(std::uint32_t index)
+	{
+		lock_owner_type guard(lock_);
+		std::uint32_t value = base::load(std::memory_order_relaxed);
+		if (((value - index) & bounded_queue_closed) == 0)
+			fetch_add(bounded_queue_closed, std::memory_order_relaxed);
+		cond_.notify_all();
+	}
+
+	std::uint32_t wait_and_load(std::uint32_t /*index*/, std::uint32_t value)
 	{
 		lock_owner_type guard(lock_);
 		std::uint32_t current_value = base::load(std::memory_order_relaxed);
@@ -144,16 +187,10 @@ public:
 		return current_value;
 	}
 
-	void store_and_wake(std::uint32_t value)
+	void store_and_wake(std::uint32_t /*index*/, std::uint32_t value)
 	{
 		lock_owner_type guard(lock_);
 		base::store(value, std::memory_order_relaxed);
-		cond_.notify_all();
-	}
-
-	void wake()
-	{
-		lock_owner_type guard(lock_);
 		cond_.notify_all();
 	}
 
@@ -170,15 +207,14 @@ public:
 	using reference = value_type &;
 	using const_reference = const value_type &;
 
-#if 0
 	static_assert(std::is_nothrow_default_constructible<Value>::value,
 		      "bounded_queue requires values with nothrow default constructor");
-#endif
 
-	bounded_queue(std::uint32_t size)
-		: ring_{nullptr}, mask_{size - 1}, closed_{false}, head_{0}, tail_{0}
+	bounded_queue(std::uint32_t size) : ring_{nullptr}, mask_{size - 1}, head_{0}, tail_{0}
 	{
-		if (size == 0 || (size & mask_) != 0)
+		if (size < bounded_queue_minsize)
+			throw std::invalid_argument("bounded_queue size must be at least 16");
+		if ((size & mask_) != 0)
 			throw std::invalid_argument(
 				"bounded_queue size must be a power of two");
 
@@ -188,11 +224,11 @@ public:
 
 		ring_ = new (ring) ring_slot[size];
 		for (std::uint32_t i = 0; i < size; i++)
-			ring_[i].initialize(i << bq_status_bits);
+			ring_[i].open(i);
 	}
 
 	bounded_queue(bounded_queue &&other) noexcept
-		: ring_{other.ring_}, mask_{other.mask_}, closed_{false}, head_{0}, tail_{0}
+		: ring_{other.ring_}, mask_{other.mask_}, head_{0}, tail_{0}
 	{
 		other.ring_ = nullptr;
 	}
@@ -202,58 +238,173 @@ public:
 		destroy();
 	}
 
-	void close()
+	//
+	// State operations
+	//
+
+	void close() noexcept
 	{
-		closed_.store(true, std::memory_order_relaxed);
-		for (std::uint32_t i = 0; i < mask_ + 1; i++)
-			ring_[i].wake();
+		const auto tail = tail_.fetch_add(mask_ + 1, std::memory_order_relaxed);
+		for (std::uint32_t i = 0; i < (mask_ + 1); i++) {
+			std::uint32_t index = (tail + i) & mask_;
+			ring_[index].close(index);
+		}
 	}
 
-	bool is_closed() const
+	bool is_closed() const noexcept
 	{
-		return closed_.load(std::memory_order_relaxed);
+		return (ring_[0].load() & bounded_queue_closed) != 0;
 	}
 
-	bool is_empty() const
+	bool is_empty() const noexcept
 	{
-		int64_t head = head_.load(std::memory_order_relaxed);
-		int64_t tail = tail_.load(std::memory_order_relaxed);
-		return (tail <= head);
+		// Assume this is called with no concurrent push operations.
+		auto tail = tail_.load(std::memory_order_acquire);
+		auto head = head_.load(std::memory_order_relaxed);
+		return int32_t(tail - head) <= 0;
+	}
+
+	bool is_full() const noexcept
+	{
+		// Assume this is called with no concurrent pop operations.
+		auto head = head_.load(std::memory_order_acquire);
+		auto tail = tail_.load(std::memory_order_relaxed);
+		return int32_t(tail - head) > mask_;
+	}
+
+	static bool is_lock_free() noexcept
+	{
+		return false;
+	}
+
+	//
+	// Basic operations
+	//
+
+	template <typename... Backoff>
+	void push(const value_type &value, Backoff... backoff)
+	{
+		auto status = wait_push(value, std::forward<Backoff>(backoff)...);
+		if (status != queue_op_status::success)
+			throw status;
 	}
 
 	template <typename... Backoff>
 	void push(value_type &&value, Backoff... backoff)
 	{
-		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_relaxed);
-		ring_slot &slot = ring_[tail & mask_];
-		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
-		put_value(slot, tail, std::move(value));
+		auto status = wait_push(std::move(value), std::forward<Backoff>(backoff)...);
+		if (status != queue_op_status::success)
+			throw status;
 	}
 
 	template <typename... Backoff>
-	void push(const value_type &value, Backoff... backoff)
+	value_type value_pop(Backoff... backoff)
 	{
-		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_relaxed);
-		ring_slot &slot = ring_[tail & mask_];
-		wait_tail(slot, tail, std::forward<Backoff>(backoff)...);
-		put_value(slot, tail, value);
+		value_type value;
+		auto status = wait_pop(value, std::forward<Backoff>(backoff)...);
+		if (status != queue_op_status::success)
+			throw status;
+		return std::move(value);
+	}
+
+	//
+	// Waiting operations
+	//
+
+	template <typename... Backoff>
+	queue_op_status wait_push(const value_type &value, Backoff... backoff)
+	{
+		auto tail = tail_.fetch_add(1, std::memory_order_relaxed);
+		auto index = tail & mask_;
+		ring_slot &slot = ring_[index];
+
+		auto status = wait(slot, index, tail, true, std::forward<Backoff>(backoff)...);
+		if (status != bounded_queue_empty)
+			return queue_op_status::closed;
+
+		put_value(slot, index, tail, value);
+		return queue_op_status::success;
+	}
+
+	template <typename... Backoff>
+	queue_op_status wait_push(value_type &&value, Backoff... backoff)
+	{
+		auto tail = tail_.fetch_add(1, std::memory_order_relaxed);
+		auto index = tail & mask_;
+		ring_slot &slot = ring_[index];
+
+		auto status = wait(slot, index, tail, true, std::forward<Backoff>(backoff)...);
+		if (status != bounded_queue_empty)
+			return queue_op_status::closed;
+
+		put_value(slot, index, tail, std::move(value));
+		return queue_op_status::success;
 	}
 
 	template <typename... Backoff>
 	queue_op_status wait_pop(value_type &value, Backoff... backoff)
 	{
-		const std::uint64_t head = head_.fetch_add(1, std::memory_order_relaxed);
-		ring_slot &slot = ring_[head & mask_];
 		for (;;) {
-			bq_status status
-				= wait_head(slot, head + 1, std::forward<Backoff>(backoff)...);
-			if (status == bq_closed)
+			auto head = head_.fetch_add(1, std::memory_order_relaxed);
+			auto index = head & mask_;
+			ring_slot &slot = ring_[index];
+
+			auto status = wait(
+				slot, index, head, false, std::forward<Backoff>(backoff)...);
+			if (status != bounded_queue_valid) {
+				if (status == bounded_queue_failed)
+					continue;
 				return queue_op_status::closed;
-			status = get_value(slot, head, status, value);
-			if (status == bq_normal)
-				return queue_op_status::success;
+			}
+
+			get_value(slot, index, head, value);
+			return queue_op_status::success;
 		}
 	}
+
+#if 0
+	//
+	// Non-waiting operations
+	//
+
+	template <typename... Backoff>
+	queue_op_status try_push(const value_type &value, Backoff... backoff)
+	{
+	}
+
+	template <typename... Backoff>
+	queue_op_status try_push(value_type &&value, Backoff... backoff)
+	{
+	}
+
+	template <typename... Backoff>
+	queue_op_status try_pop(value_type &value, Backoff... backoff)
+	{
+	}
+#endif
+
+#if 0 && ENABLE_QUEUE_NONBLOCKING_OPS
+	//
+	// Non-blocking operations
+	//
+
+	queue_op_status nonblocking_pop(value_type &value)
+	{
+		std::uint32_t head = head_.load(std::memory_order_relaxed);
+		ring_slot &slot = ring_[head & mask_];
+
+		std::uint32_t current_ticket = slot.load();
+		std::uint32_t required_ticket = (head + 1) << bq_status_bits;
+		if ((current_ticket & bq_ticket_mask) != required_ticket)
+			return queue_op_status::empty;
+
+		if (!head_.compare_exchange_strong(head, head + 1, std::memory_order_relaxed))
+			return queue_op_status::busy;
+
+		get_value(slot, head, value);
+		return queue_op_status::success;
+	}
+#endif
 
 private:
 	struct alignas(cache_line_size) ring_slot : public Ticket
@@ -271,165 +422,134 @@ private:
 		}
 	}
 
-	void wait_tail(ring_slot &slot, std::uint64_t tail)
+	bounded_queue_status
+	wait(ring_slot &slot, std::uint32_t index, std::uint32_t base, bool tail)
 	{
-		std::uint32_t current_ticket = slot.load();
-		std::uint32_t required_ticket = tail << bq_status_bits;
-		while ((current_ticket & bq_ticket_mask) != required_ticket) {
-			current_ticket = slot.wait_and_load(current_ticket);
+		auto ticket = slot.load();
+		for (;;) {
+			std::uint32_t diff = ticket - base;
+			if (tail || diff) {
+				if (diff < bounded_queue_waiting
+				    || (diff & bounded_queue_closed) != 0)
+					return bounded_queue_status(diff);
+			}
+			ticket = slot.wait_and_load(index, ticket);
 		}
 	}
 
 	template <typename Backoff>
-	void wait_tail(ring_slot &slot, std::uint64_t tail, Backoff backoff)
+	bounded_queue_status wait(ring_slot &slot,
+				  std::uint32_t index,
+				  std::uint32_t base,
+				  bool tail,
+				  Backoff backoff)
 	{
 		bool waiting = false;
-		std::uint32_t current_ticket = slot.load();
-		std::uint32_t required_ticket = tail << bq_status_bits;
-		while ((current_ticket & bq_ticket_mask) != required_ticket) {
-			if (waiting) {
-				current_ticket = slot.wait_and_load(current_ticket);
-			} else {
-				waiting = backoff();
-				current_ticket = slot.load();
-			}
-		}
-	}
-
-	bq_status wait_head(ring_slot &slot, std::uint64_t head)
-	{
-		std::uint32_t current_ticket = slot.load();
-		std::uint32_t required_ticket = head << bq_status_bits;
-		while ((current_ticket & bq_ticket_mask) != required_ticket) {
-			if (is_closed()) {
-				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
-				if (head >= tail)
-					return bq_closed;
-			}
-			current_ticket = slot.wait_and_load(current_ticket);
-		}
-		return bq_status(current_ticket & bq_status_mask);
-	}
-
-	template <typename Backoff>
-	bq_status wait_head(ring_slot &slot, std::uint64_t head, Backoff backoff)
-	{
-		bool waiting = false;
-		std::uint32_t current_ticket = slot.load();
-		std::uint32_t required_ticket = head << bq_status_bits;
-		while ((current_ticket & bq_ticket_mask) != required_ticket) {
-			if (is_closed()) {
-				std::uint64_t tail = tail_.load(std::memory_order_seq_cst);
-				if (head >= tail)
-					return bq_closed;
+		auto ticket = slot.load();
+		for (;;) {
+			std::uint32_t diff = ticket - base;
+			if (tail || diff) {
+				if (diff < bounded_queue_waiting
+				    || (diff & bounded_queue_closed) != 0)
+					return bounded_queue_status(diff);
 			}
 			if (waiting) {
-				current_ticket = slot.wait_and_load(current_ticket);
+				ticket = slot.wait_and_load(index, ticket);
 			} else {
 				waiting = backoff();
-				current_ticket = slot.load();
+				ticket = slot.load();
 			}
 		}
-		return bq_status(current_ticket & bq_status_mask);
-	}
-
-	void wake_tail(ring_slot &slot, std::uint32_t tail)
-	{
-		slot.store_and_wake((tail + 1) << bq_status_bits);
-	}
-
-	void wake_tail(ring_slot &slot, std::uint32_t tail, bq_status status)
-	{
-		slot.store_and_wake(((tail + 1) << bq_status_bits) | status);
-	}
-
-	void wake_head(ring_slot &slot, std::uint32_t head)
-	{
-		slot.store_and_wake((head + mask_ + 1) << bq_status_bits);
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if<std::is_nothrow_copy_assignable<V>::value>::type
+		  typename std::enable_if_t<std::is_nothrow_copy_assignable<V>::value>
 			  * = nullptr>
-	void put_value(ring_slot &slot, std::uint64_t tail, const value_type &value)
+	void put_value(ring_slot &slot,
+		       std::uint32_t index,
+		       std::uint32_t tail,
+		       const value_type &value) noexcept
 	{
 		slot.value = value;
-		wake_tail(slot, tail);
+		slot.store_and_wake(index, tail + bounded_queue_valid);
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if<not std::is_nothrow_copy_assignable<V>::value>::type
+		  typename std::enable_if_t<not std::is_nothrow_copy_assignable<V>::value>
 			  * = nullptr>
-	void put_value(ring_slot &slot, std::uint64_t tail, const value_type &value)
+	void put_value(ring_slot &slot,
+		       std::uint32_t index,
+		       std::uint32_t tail,
+		       const value_type &value)
 	{
 		try {
 			slot.value = value;
+			slot.store_and_wake(index, tail + bounded_queue_valid);
 		} catch (...) {
-			wake_tail(slot, tail, bq_invalid);
+			slot.store_and_wake(index, tail + bounded_queue_failed);
 			throw;
 		}
-		wake_tail(slot, tail);
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if<std::is_nothrow_move_assignable<V>::value>::type
+		  typename std::enable_if_t<std::is_nothrow_move_assignable<V>::value>
 			  * = nullptr>
-	void put_value(ring_slot &slot, std::uint64_t tail, value_type &&value)
+	void put_value(ring_slot &slot,
+		       std::uint32_t index,
+		       std::uint32_t tail,
+		       value_type &&value) noexcept
 	{
 		slot.value = std::move(value);
-		wake_tail(slot, tail);
+		slot.store_and_wake(index, tail + bounded_queue_valid);
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if<not std::is_nothrow_move_assignable<V>::value>::type
+		  typename std::enable_if_t<not std::is_nothrow_move_assignable<V>::value>
 			  * = nullptr>
-	void put_value(ring_slot &slot, std::uint64_t tail, value_type &&value)
+	void
+	put_value(ring_slot &slot, std::uint32_t index, std::uint32_t tail, value_type &&value)
 	{
 		try {
 			slot.value = std::move(value);
+			slot.store_and_wake(index, tail + bounded_queue_valid);
 		} catch (...) {
-			wake_tail(slot, tail, bq_invalid);
+			slot.store_and_wake(index, tail + bounded_queue_failed);
 			throw;
 		}
-		wake_tail(slot, tail);
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if<std::is_nothrow_move_assignable<V>::value>::type
+		  typename std::enable_if_t<std::is_nothrow_move_assignable<V>::value>
 			  * = nullptr>
-	bq_status get_value(ring_slot &slot, std::uint64_t head, bq_status, value_type &value)
+	void get_value(ring_slot &slot,
+		       std::uint32_t index,
+		       std::uint32_t head,
+		       value_type &value) noexcept
 	{
 		value = std::move(slot.value);
-		wake_head(slot, head);
-		return bq_normal;
+		slot.store_and_wake(index, head + mask_ + 1);
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if<not std::is_nothrow_move_assignable<V>::value>::type
+		  typename std::enable_if_t<not std::is_nothrow_move_assignable<V>::value>
 			  * = nullptr>
-	bq_status
-	get_value(ring_slot &slot, std::uint64_t head, bq_status status, value_type &value)
+	void
+	get_value(ring_slot &slot, std::uint32_t index, std::uint32_t head, value_type &value)
 	{
-		if (status == bq_invalid)
-			return status;
-
 		try {
 			value = std::move(slot.value);
+			slot.store_and_wake(index, head + mask_ + 1);
 		} catch (...) {
-			wake_head(slot, head);
+			slot.store_and_wake(index, head + mask_ + 1);
 			throw;
 		}
-		wake_head(slot, head);
-		return bq_normal;
 	}
 
 	ring_slot *ring_;
 	const std::uint32_t mask_;
 
-	std::atomic<bool> closed_;
-
-	alignas(cache_line_size) std::atomic<std::uint64_t> head_;
-	alignas(cache_line_size) std::atomic<std::uint64_t> tail_;
+	alignas(cache_line_size) std::atomic<std::uint32_t> head_;
+	alignas(cache_line_size) std::atomic<std::uint32_t> tail_;
 };
 
 template <typename ValueType>
