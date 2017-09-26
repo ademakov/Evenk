@@ -56,8 +56,16 @@ enum bounded_queue_status : std::uint32_t {
 	bounded_queue_waiting = 8,
 };
 
-// The minimum queue size that allows combined slot state and ticket encoding.
-constexpr std::uint32_t bounded_queue_minsize = 16;
+// The bit mask that selects value status.
+constexpr std::uint32_t bounded_queue_status_mask
+	= bounded_queue_valid | bounded_queue_closed | bounded_queue_failed;
+
+// The bit mask that selects ticket number.
+constexpr std::uint32_t bounded_queue_ticket_mask
+	= ~(bounded_queue_status_mask | bounded_queue_waiting);
+
+// The minimum queue size that allows combined slot status and ticket encoding.
+constexpr std::uint32_t bounded_queue_min_size = 16;
 
 } // namespace detail
 
@@ -146,7 +154,7 @@ public:
 					    std::memory_order_relaxed)
 		    || value == wait_value) {
 			futex_wait(*this, wait_value);
-			return base::load(std::memory_order_relaxed);
+			value = base::load(std::memory_order_relaxed);
 		}
 		return value;
 	}
@@ -210,9 +218,9 @@ public:
 	static_assert(std::is_nothrow_default_constructible<Value>::value,
 		      "bounded_queue requires values with nothrow default constructor");
 
-	bounded_queue(std::uint32_t size) : ring_{nullptr}, mask_{size - 1}, head_{0}, tail_{0}
+	bounded_queue(std::uint32_t size) : ring_{nullptr}, mask_{size - 1}
 	{
-		if (size < bounded_queue_minsize)
+		if (size < bounded_queue_min_size)
 			throw std::invalid_argument("bounded_queue size must be at least 16");
 		if ((size & mask_) != 0)
 			throw std::invalid_argument(
@@ -227,8 +235,7 @@ public:
 			ring_[i].open(i);
 	}
 
-	bounded_queue(bounded_queue &&other) noexcept
-		: ring_{other.ring_}, mask_{other.mask_}, head_{0}, tail_{0}
+	bounded_queue(bounded_queue &&other) noexcept : ring_{other.ring_}, mask_{other.mask_}
 	{
 		other.ring_ = nullptr;
 	}
@@ -318,10 +325,9 @@ public:
 		auto index = tail & mask_;
 		ring_slot &slot = ring_[index];
 
-		auto status = wait(slot, index, tail, true, std::forward<Backoff>(backoff)...);
-		if (status != bounded_queue_empty)
-			return queue_op_status::closed;
-
+		auto status = wait_tail(slot, index, tail, std::forward<Backoff>(backoff)...);
+		if (status != queue_op_status::success)
+			return status;
 		put_value(slot, index, tail, value);
 		return queue_op_status::success;
 	}
@@ -333,11 +339,10 @@ public:
 		auto index = tail & mask_;
 		ring_slot &slot = ring_[index];
 
-		auto status = wait(slot, index, tail, true, std::forward<Backoff>(backoff)...);
-		if (status != bounded_queue_empty)
-			return queue_op_status::closed;
-
-		put_value(slot, index, tail, std::move(value));
+		auto status = wait_tail(slot, index, tail, std::forward<Backoff>(backoff)...);
+		if (status != queue_op_status::success)
+			return status;
+		put_value(slot, index, tail, value);
 		return queue_op_status::success;
 	}
 
@@ -349,12 +354,12 @@ public:
 			auto index = head & mask_;
 			ring_slot &slot = ring_[index];
 
-			auto status = wait(
-				slot, index, head, false, std::forward<Backoff>(backoff)...);
-			if (status != bounded_queue_valid) {
-				if (status == bounded_queue_failed)
+			auto status = wait_head(
+				slot, index, head, std::forward<Backoff>(backoff)...);
+			if (status != queue_op_status::success) {
+				if (status == queue_op_status::empty)
 					continue;
-				return queue_op_status::closed;
+				return status;
 			}
 
 			get_value(slot, index, head, value);
@@ -422,36 +427,78 @@ private:
 		}
 	}
 
-	bounded_queue_status
-	wait(ring_slot &slot, std::uint32_t index, std::uint32_t base, bool tail)
+	queue_op_status wait_tail(ring_slot &slot, std::uint32_t index, std::uint32_t base)
 	{
 		auto ticket = slot.load();
 		for (;;) {
-			std::uint32_t diff = ticket - base;
-			if (tail || diff) {
-				if (diff < bounded_queue_waiting
-				    || (diff & bounded_queue_closed) != 0)
-					return bounded_queue_status(diff);
+			auto diff = ticket - base;
+			if ((diff & bounded_queue_ticket_mask) == 0)
+				return queue_op_status::success;
+			if ((diff & bounded_queue_closed) != 0)
+				return queue_op_status::closed;
+			ticket = slot.wait_and_load(index, ticket);
+		}
+	}
+
+	template <typename Backoff>
+	queue_op_status
+	wait_tail(ring_slot &slot, std::uint32_t index, std::uint32_t base, Backoff backoff)
+	{
+		bool waiting = false;
+		auto ticket = slot.load();
+		for (;;) {
+			auto diff = ticket - base;
+			if ((diff & bounded_queue_ticket_mask) == 0)
+				return queue_op_status::success;
+			if ((diff & bounded_queue_closed) != 0)
+				return queue_op_status::closed;
+			if (waiting) {
+				ticket = slot.wait_and_load(index, ticket);
+			} else {
+				waiting = backoff();
+				ticket = slot.load();
+			}
+		}
+	}
+
+	queue_op_status wait_head(ring_slot &slot, std::uint32_t index, std::uint32_t base)
+	{
+		auto ticket = slot.load();
+		for (;;) {
+			auto diff = ticket - base;
+			auto status = diff & bounded_queue_status_mask;
+			if (status != 0) {
+				if ((diff & bounded_queue_ticket_mask) == 0) {
+					if ((diff & bounded_queue_valid) != 0)
+						return queue_op_status::success;
+					if ((diff & bounded_queue_failed) != 0)
+						return queue_op_status::empty;
+				}
+				if ((diff & bounded_queue_closed) != 0)
+					return queue_op_status::closed;
 			}
 			ticket = slot.wait_and_load(index, ticket);
 		}
 	}
 
 	template <typename Backoff>
-	bounded_queue_status wait(ring_slot &slot,
-				  std::uint32_t index,
-				  std::uint32_t base,
-				  bool tail,
-				  Backoff backoff)
+	queue_op_status
+	wait_head(ring_slot &slot, std::uint32_t index, std::uint32_t base, Backoff backoff)
 	{
 		bool waiting = false;
 		auto ticket = slot.load();
 		for (;;) {
 			std::uint32_t diff = ticket - base;
-			if (tail || diff) {
-				if (diff < bounded_queue_waiting
-				    || (diff & bounded_queue_closed) != 0)
-					return bounded_queue_status(diff);
+			auto status = diff & bounded_queue_status_mask;
+			if (status != 0) {
+				if ((diff & bounded_queue_ticket_mask) == 0) {
+					if ((diff & bounded_queue_valid) != 0)
+						return queue_op_status::success;
+					if ((diff & bounded_queue_failed) != 0)
+						return queue_op_status::empty;
+				}
+				if ((diff & bounded_queue_closed) != 0)
+					return queue_op_status::closed;
 			}
 			if (waiting) {
 				ticket = slot.wait_and_load(index, ticket);
@@ -548,8 +595,8 @@ private:
 	ring_slot *ring_;
 	const std::uint32_t mask_;
 
-	alignas(cache_line_size) std::atomic<std::uint32_t> head_;
-	alignas(cache_line_size) std::atomic<std::uint32_t> tail_;
+	alignas(cache_line_size) std::atomic<std::uint32_t> head_ = {0};
+	alignas(cache_line_size) std::atomic<std::uint32_t> tail_ = {0};
 };
 
 template <typename ValueType>
