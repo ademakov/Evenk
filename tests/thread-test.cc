@@ -35,7 +35,7 @@ main()
 		auto affinity = thread.affinity();
 		print_affinity(affinity);
 
-		for (std::size_t i = 0; i < affinity.size(); i++)
+		for (std::size_t i = 0; i < affinity.size(); i += 2)
 			affinity[i] = false;
 		thread.affinity(affinity);
 	}
