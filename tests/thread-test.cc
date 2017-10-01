@@ -19,7 +19,8 @@ print_affinity(const evenk::thread::cpuset_type &affinity)
 {
 	std::cout << affinity.size() << ":";
 	for (std::size_t cpu = 0; cpu < affinity.size(); cpu++)
-		std::cout << " " << cpu;
+		if (affinity[cpu])
+			std::cout << " " << cpu;
 	std::cout << "\n";
 }
 
@@ -35,8 +36,8 @@ main()
 		auto affinity = thread.affinity();
 		print_affinity(affinity);
 
-		for (std::size_t i = 0; i < affinity.size(); i += 2)
-			affinity[i] = false;
+		for (std::size_t cpu = 0; cpu < affinity.size(); cpu += 2)
+			affinity[cpu] = false;
 		thread.affinity(affinity);
 	}
 
