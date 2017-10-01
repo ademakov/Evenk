@@ -28,6 +28,7 @@
 #include "config.h"
 
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <pthread.h>
@@ -43,6 +44,36 @@ class thread : public std::thread
 {
 public:
 	using cpuset_type = std::vector<bool>;
+
+	thread() noexcept = default;
+
+	template <class Func, class... Args>
+	explicit thread(Func &&f, Args &&... args)
+		: std::thread(std::forward<Func>(f), std::forward<Args>(args)...)
+	{
+	}
+
+	// Move from evenk::thread
+	thread(thread &&other) noexcept
+	{
+		std::thread::swap(other);
+	}
+	thread &operator=(thread &&other) noexcept
+	{
+		std::thread::swap(other);
+		return *this;
+	}
+
+	// Move from std::thread
+	thread(std::thread &&other) noexcept
+	{
+		std::thread::swap(other);
+	}
+	thread &operator=(std::thread &&other) noexcept
+	{
+		std::thread::swap(other);
+		return *this;
+	}
 
 #if HAVE_PTHREAD_SETAFFINITY_NP
 
