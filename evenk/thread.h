@@ -31,7 +31,7 @@
 #include <vector>
 
 #include <pthread.h>
-#ifdef HAVE_SCHED_H 1
+#ifdef HAVE_SCHED_H
 #include <sched.h>
 #endif
 
