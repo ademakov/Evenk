@@ -48,23 +48,34 @@ public:
 
 	void affinity(const cpuset_type &cpuset)
 	{
-		cpu_set_t native_cpuset;
+		auto handle = native_handle();
+		if (!joinable())
+			throw_system_error(EINVAL, "affinity");
 
+		int cpu_num = CPU_SETSIZE;
+		if (cpu_num > cpuset.size())
+			cpu_num = cpuset.size();
+
+		cpu_set_t native_cpuset;
 		CPU_ZERO(&native_cpuset);
-		for (int cpu = 0; cpu < CPU_SETSIZE && cpu < cpuset.size(); cpu++)
+		for (int cpu = 0; cpu < cpu_num; cpu++) {
 			if (cpuset[cpu])
 				CPU_SET(cpu, &native_cpuset);
+		}
 
-		int rc = pthread_setaffinity_np(native_handle(), sizeof native_cpuset, &native_cpuset);
+		int rc = pthread_setaffinity_np(handle, sizeof native_cpuset, &native_cpuset);
 		if (rc != 0)
 			throw_system_error(rc, "pthread_setaffinity_np");
 	}
 
 	cpuset_type affinity()
 	{
-		cpu_set_t native_cpuset;
+		auto handle = native_handle();
+		if (!joinable())
+			throw_system_error(EINVAL, "affinity");
 
-		int rc = pthread_getaffinity_np(native_handle(), sizeof native_cpuset, &native_cpuset);
+		cpu_set_t native_cpuset;
+		int rc = pthread_getaffinity_np(handle, sizeof native_cpuset, &native_cpuset);
 		if (rc != 0)
 			throw_system_error(rc, "pthread_getaffinity_np");
 
@@ -79,10 +90,14 @@ public:
 
 	void affinity(const cpuset_type &)
 	{
+		if (!joinable())
+			throw_system_error(EINVAL, "affinity");
 	}
 
 	cpuset_type affinity()
 	{
+		if (!joinable())
+			throw_system_error(EINVAL, "affinity");
 		return cpuset_type();
 	}
 
