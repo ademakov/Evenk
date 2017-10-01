@@ -52,9 +52,10 @@ public:
 		if (!joinable())
 			throw_system_error(EINVAL, "affinity");
 
-		int cpu_num = CPU_SETSIZE;
-		if (cpu_num > cpuset.size())
-			cpu_num = cpuset.size();
+		int cpu_num = cpuset.size();
+		// TODO: use CPU_ALLOC instead
+		if (cpu_num > CPU_SETSIZE)
+			cpu_num = CPU_SETSIZE;
 
 		cpu_set_t native_cpuset;
 		CPU_ZERO(&native_cpuset);
@@ -74,13 +75,18 @@ public:
 		if (!joinable())
 			throw_system_error(EINVAL, "affinity");
 
+		int cpu_num = std::thread::hardware_concurrency();
+		// TODO: use CPU_ALLOC instead
+		if (cpu_num > CPU_SETSIZE)
+			cpu_num = CPU_SETSIZE;
+
 		cpu_set_t native_cpuset;
 		int rc = pthread_getaffinity_np(handle, sizeof native_cpuset, &native_cpuset);
 		if (rc != 0)
 			throw_system_error(rc, "pthread_getaffinity_np");
 
 		cpuset_type cpuset;
-		for (int cpu = 0; cpu < CPU_SETSIZE; cpu++)
+		for (int cpu = 0; cpu < cpu_num; cpu++)
 			cpuset.push_back(CPU_ISSET(cpu, &native_cpuset));
 
 		return cpuset;
