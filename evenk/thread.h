@@ -1,5 +1,5 @@
 //
-// Thread Management
+// Single Thread with CPU Affinity Support
 //
 // Copyright (c) 2017  Aleksey Demakov
 //
