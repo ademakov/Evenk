@@ -7,4 +7,5 @@ include_HEADERS = \
     futex.h \
     spinlock.h \
     synch.h \
-    synch_queue.h
+    synch_queue.h \
+    thread.h
