@@ -1,3 +1,4 @@
 /lock-bench
 /queue-bench
 /thread-test
+/thread_pool-test
