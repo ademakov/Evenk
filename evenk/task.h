@@ -111,8 +111,8 @@
 //   //auto task8 = evenk::trivial_task<void, 48>(std::bind(testN, 42));
 //   //task8();
 //   // ... but using a reference still works
-//   auto bind9 = std::bind(testN, 42);
-//   auto task9 = evenk::trivial_task<int>(std::ref(func));
+//   auto test9 = std::bind(testN, 42);
+//   auto task9 = evenk::trivial_task<int>(std::ref(test9));
 //   task9();
 //
 
