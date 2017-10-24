@@ -27,7 +27,6 @@ AllowShortFunctionsOnASingleLine: Empty
 
 AlwaysBreakTemplateDeclarations: true
 AlwaysBreakAfterReturnType: TopLevelDefinitions
-BreakBeforeBinaryOperators: All
 
 ReflowComments: false
 
