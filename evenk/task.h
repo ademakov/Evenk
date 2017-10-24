@@ -62,6 +62,59 @@
 // std::function and it was never implemented in the e.g. gcc libstdc++
 // library. So in this respect tasks provide an extended feature.
 //
+// An even more restricted task variation is also available: trivial_task.
+// This kind of tasks have a fixed maximum size and do not use allocators
+// at all. Also trivial_task can only handle trivially-copyable types. On
+// other hand they provide minimal overhead. In principle it is possible
+// to use them with other types (non-trivial or exceeding the maximum size)
+// if the function object is passed by reference. In this case the object
+// in question must be kept alive separately until the task is in use.
+//
+// Examples:
+//
+//   void test() { ... }
+//   void  testN(int n) { ... }
+//   struct testBig {
+//     char data[48] = {0};
+//     void operator()() { ... }
+//   };
+//   ...
+//   // A simple task usage
+//   auto task1 = evenk::task<void>(test);
+//   task1();
+//
+//   // A trivial task usage, has less overhead than the above
+//   auto task2 = evenk::trivial_task<void>(test);
+//   task2();
+//
+//   // A large task usage, looks identically but uses allocation internally
+//   auto task3 = evenk::task<void>(testBig());
+//   task3();
+//
+//   // A large trivial task will not compile as is
+//   //auto task4 = evenk::trivial_task<void>(testBig());
+//   //task4();
+//
+//   // It requires either increased internal storage
+//   auto task5 = evenk::trivial_task<void, 48>(testBig());
+//   task5();
+//   // ...  or using a reference
+//   testBig test6;
+//   auto task6 = evenk::trivial_task<void>(std::ref(test6));
+//   task6();
+//
+//   // The result of std::bind works smoothly with tasks
+//   auto task7 = evenk::task<void>(std::bind(testN, 42));
+//   task7();
+//
+//   // It is not trivially-copyable so a trivial_task will not compile
+//   //auto task8 = evenk::trivial_task<void, 48>(std::bind(testN, 42));
+//   //task8();
+//   // ... but using a reference still works
+//   auto bind9 = std::bind(testN, 42);
+//   auto task9 = evenk::trivial_task<int>(std::ref(func));
+//   task9();
+//
 
 namespace evenk {
 
