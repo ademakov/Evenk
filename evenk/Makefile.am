@@ -8,4 +8,5 @@ include_HEADERS = \
     spinlock.h \
     synch.h \
     synch_queue.h \
+    task.h \
     thread.h
