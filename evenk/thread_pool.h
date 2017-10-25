@@ -28,17 +28,23 @@
 #include <atomic>
 
 #include "basic.h"
-#include "spinlock.h"
 #include "synch.h"
+#include "task.h"
 #include "thread.h"
 
 namespace evenk {
 
-template <template<typename> class Queue>
+template <template <typename> class Queue,
+	  std::size_t S = 2 * fptr_size,
+	  typename A = std::allocator<char>>
 class thread_pool : non_copyable
 {
 public:
-	using task_type = void *;
+	using allocator_type = A;
+
+	static constexpr std::size_t task_size = S;
+	using task_type = task<void, task_size, allocator_type>;
+
 	using queue_type = Queue<task_type>;
 
 	using cpuset_type = thread::cpuset_type;
@@ -48,7 +54,16 @@ public:
 	{
 		pool_.reserve(size);
 		for (std::size_t i = 0; i < size; i++)
-			pool_.emplace_back(&thread_pool<Queue>::run, this);
+			pool_.emplace_back(&thread_pool<Queue, S, A>::work, this);
+	}
+
+	template <typename... QueueArgs>
+	thread_pool(std::size_t size, const allocator_type &alloc, QueueArgs... queue_args)
+		: queue_(queue_args...), allocator_(alloc)
+	{
+		pool_.reserve(size);
+		for (std::size_t i = 0; i < size; i++)
+			pool_.emplace_back(&thread_pool<Queue>::work, this);
 	}
 
 	~thread_pool()
@@ -72,6 +87,12 @@ public:
 		return pool_[thread].affinity();
 	}
 
+	template <typename Callable>
+	void submit(Callable &&callable)
+	{
+		queue_.push(task_type(std::forward<Callable>(callable), allocator_));
+	}
+
 	void stop()
 	{
 		close(stop_flag);
@@ -93,7 +114,7 @@ private:
 	static constexpr std::uint8_t stop_flag = 1;
 	static constexpr std::uint8_t wait_flag = 2;
 
-	void run()
+	void work()
 	{
 		while ((flags_.load(std::memory_order_relaxed) & stop_flag) == 0) {
 			task_type task;
@@ -105,7 +126,7 @@ private:
 				continue;
 			}
 
-			(void) task;
+			task();
 		}
 	}
 
@@ -117,6 +138,7 @@ private:
 
 	std::vector<thread> pool_;
 	queue_type queue_;
+	allocator_type allocator_;
 
 	std::atomic<std::uint8_t> flags_ = ATOMIC_VAR_INIT(0);
 
