@@ -28,6 +28,7 @@
 #include <atomic>
 
 #include "basic.h"
+#include "conqueue.h"
 #include "synch.h"
 #include "task.h"
 #include "thread.h"
