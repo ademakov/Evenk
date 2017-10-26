@@ -9,4 +9,5 @@ include_HEADERS = \
     synch.h \
     synch_queue.h \
     task.h \
-    thread.h
+    thread.h \
+    thread_pool.h
