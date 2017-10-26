@@ -37,7 +37,7 @@ namespace evenk {
 class thread_pool_base : non_copyable
 {
 public:
-	using cpuset_type = thread::cpuset_type;
+	thread_pool_base() noexcept = default;
 
 	virtual ~thread_pool_base() noexcept
 	{
@@ -50,19 +50,14 @@ public:
 		return pool_.size();
 	}
 
+	thread &operator[](std::size_t index)
+	{
+		return pool_[index];
+	}
+
 	bool is_stopped() const noexcept
 	{
 		return (flags_.load(std::memory_order_relaxed) & stop_flag);
-	}
-
-	void affinity(std::size_t thread, const cpuset_type &cpuset)
-	{
-		pool_[thread].affinity(cpuset);
-	}
-
-	cpuset_type affinity(std::size_t thread)
-	{
-		return pool_[thread].affinity();
 	}
 
 	void stop()
