@@ -34,47 +34,25 @@
 
 namespace evenk {
 
-template <template <typename> class Queue,
-	  std::size_t S = 2 * fptr_size,
-	  typename A = std::allocator<char>>
-class thread_pool : non_copyable
+class thread_pool_base : non_copyable
 {
 public:
-	using allocator_type = A;
-
-	static constexpr std::size_t task_size = S;
-	using task_type = task<void, task_size, allocator_type>;
-
-	using queue_type = Queue<task_type>;
-
 	using cpuset_type = thread::cpuset_type;
 
-	template <typename... QueueArgs>
-	thread_pool(std::size_t size, QueueArgs... queue_args) : queue_(queue_args...)
-	{
-		pool_.reserve(size);
-		for (std::size_t i = 0; i < size; i++)
-			pool_.emplace_back(&thread_pool<Queue, S, A>::work, this);
-	}
-
-	template <typename... QueueArgs>
-	thread_pool(std::size_t size, const allocator_type &alloc, QueueArgs... queue_args)
-		: queue_(queue_args...), allocator_(alloc)
-	{
-		pool_.reserve(size);
-		for (std::size_t i = 0; i < size; i++)
-			pool_.emplace_back(&thread_pool<Queue>::work, this);
-	}
-
-	~thread_pool()
+	virtual ~thread_pool_base() noexcept
 	{
 		stop();
 		wait();
 	}
 
-	std::size_t size() noexcept
+	std::size_t size() const noexcept
 	{
 		return pool_.size();
+	}
+
+	bool is_stopped() const noexcept
+	{
+		return (flags_.load(std::memory_order_relaxed) & stop_flag);
 	}
 
 	void affinity(std::size_t thread, const cpuset_type &cpuset)
@@ -85,12 +63,6 @@ public:
 	cpuset_type affinity(std::size_t thread)
 	{
 		return pool_[thread].affinity();
-	}
-
-	template <typename Callable>
-	void submit(Callable &&callable)
-	{
-		queue_.push(task_type(std::forward<Callable>(callable), allocator_));
 	}
 
 	void stop()
@@ -110,13 +82,78 @@ public:
 		}
 	}
 
+protected:
+	virtual void work() = 0;
+	virtual void shutdown() = 0;
+
+	void activate(std::size_t size)
+	{
+		if (pool_.size())
+			throw std::logic_error("thread_pool is already active");
+
+		pool_.reserve(size);
+		for (std::size_t i = 0; i < size; i++)
+			pool_.emplace_back(&thread_pool_base::work, this);
+	}
+
 private:
 	static constexpr std::uint8_t stop_flag = 1;
 	static constexpr std::uint8_t wait_flag = 2;
 
-	void work()
+	std::vector<thread> pool_;
+
+	std::atomic<std::uint8_t> flags_ = ATOMIC_VAR_INIT(0);
+
+	default_synch::lock_type join_lock_;
+	bool join_done_ = false;
+
+	void close(std::uint8_t flag)
 	{
-		while ((flags_.load(std::memory_order_relaxed) & stop_flag) == 0) {
+		if (flags_.fetch_or(flag, std::memory_order_relaxed) == 0)
+			shutdown();
+	}
+};
+
+template <template <typename> class Queue,
+	  std::size_t S = 2 * fptr_size,
+	  typename A = std::allocator<char>>
+class thread_pool final : public thread_pool_base
+{
+public:
+	using allocator_type = A;
+
+	static constexpr std::size_t task_size = S;
+	using task_type = task<void, task_size, allocator_type>;
+
+	using queue_type = Queue<task_type>;
+
+	template <typename... QueueArgs>
+	thread_pool(std::size_t size, QueueArgs... queue_args)
+		: thread_pool_base(), queue_(queue_args...)
+	{
+		activate(size);
+	}
+
+	template <typename... QueueArgs>
+	thread_pool(std::size_t size, const allocator_type &alloc, QueueArgs... queue_args)
+		: thread_pool_base(), queue_(queue_args...), alloc_(alloc)
+	{
+		activate(size);
+	}
+
+	template <typename Callable>
+	void submit(Callable &&callable)
+	{
+		queue_.push(task_type(std::forward<Callable>(callable), alloc_));
+	}
+
+private:
+	queue_type queue_;
+	allocator_type alloc_;
+
+	virtual void work() override
+	{
+		while (!is_stopped()) {
 			task_type task;
 
 			auto status = queue_.wait_pop(task);
@@ -130,20 +167,10 @@ private:
 		}
 	}
 
-	void close(std::uint8_t flag)
+	virtual void shutdown() override
 	{
-		if (flags_.fetch_or(flag, std::memory_order_relaxed) == 0)
-			queue_.close();
+		queue_.close();
 	}
-
-	std::vector<thread> pool_;
-	queue_type queue_;
-	allocator_type allocator_;
-
-	std::atomic<std::uint8_t> flags_ = ATOMIC_VAR_INIT(0);
-
-	default_synch::lock_type join_lock_;
-	bool join_done_ = false;
 };
 
 } // namespace evenk
