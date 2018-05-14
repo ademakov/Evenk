@@ -222,7 +222,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	void push(value_type &&value, Backoff... backoff)
+	void push(value_type &&value, Backoff &&... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[tail & mask_];
@@ -231,7 +231,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	void push(const value_type &value, Backoff... backoff)
+	void push(const value_type &value, Backoff &&... backoff)
 	{
 		const std::uint64_t tail = tail_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[tail & mask_];
@@ -240,7 +240,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	queue_op_status wait_pop(value_type &value, Backoff... backoff)
+	queue_op_status wait_pop(value_type &value, Backoff &&... backoff)
 	{
 		const std::uint64_t head = head_.fetch_add(1, std::memory_order_relaxed);
 		ring_slot &slot = ring_[head & mask_];
