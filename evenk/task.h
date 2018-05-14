@@ -37,23 +37,28 @@
 // thread pools. It tries to reduce the need for dynamic memory allocation
 // and synchronization as much as possible.
 //
-// This is achieved by relying on move-semantics while std::function relies
-// on copy-semantics. As a task goes from a client thread to the task queue
-// in a thread pool and from the queue to a worker thread at any given time
-// there is only one task owner.
+// This is achieved by enforcing move-semantics while std::function may use
+// copy-semantics. At any given time, as a task goes from a client thread to
+// a thread pool's task queue and then to a worker thread, there is only one
+// current owner of the task.
 //
-// Memory allocation should be avoided for move operations. So normally the
-// memory allocator is only used for task construction and destruction. But
-// small target types (function pointers or references to function objects)
-// avoid memory allocation completely.
+// Memory allocation should be avoided for task move operations. There is no
+// memory allocation at all for small trivially-copyable target types (such
+// as function pointers, references to function objects, etc). And for other
+// target types memory should only be allocated when the task is constructed
+// from a target callable object and deallocated when the task is destructed.
 //
 // A task itself is a callable object without arguments. It is non-copyable.
 // However it is noexcept-movable.
 //
 // Also std::function implementations are usually optimized to efficiently
-// store member function pointers so they reserve extra room for this data
-// type. As tasks take no arguments it makes little sense to support member
-// functions (at the very least they require a this-pointer argument).
+// store member function pointers so they reserve fixed-size extra room for
+// this data type. For larger objects they have to use dynamically allocated
+// memory. But for tasks it is possible to specify the reserved memory size.
+// So it is possible to avoid allocation for larger objects. But by default
+// the reserved memory size is even smaller than for std::function. It is
+// just enough for a non-member function pointer or a reference to a more
+// complex type.
 //
 // The task allocator might be polymorphic (pmr). In such a case it moves
 // along with the task data.
@@ -137,7 +142,7 @@ struct task_result_base<decltype(void(task_invoke(std::declval<F>()))), F>
 	using type = decltype(task_invoke(std::declval<F>()));
 };
 
-template <class F>
+template <typename F>
 struct task_result : task_result_base<void, F>
 {
 };
@@ -344,8 +349,8 @@ private:
 
 		data_destroy_wrapper() = default;
 
-		data_destroy_wrapper(const allocator_type &allacator)
-			: allocator_type(allacator)
+		data_destroy_wrapper(const allocator_type &allocator)
+			: allocator_type(allocator)
 		{
 		}
 	};
