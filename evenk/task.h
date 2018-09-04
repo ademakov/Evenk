@@ -128,6 +128,14 @@ static constexpr std::size_t fptr_align = alignof(void (*)());
 
 namespace detail {
 
+static constexpr std::size_t align_size(std::size_t size)
+{
+	static_assert((fptr_align & (fptr_align - 1)) == 0,
+		      "function pointer alignment is not a power of two");
+	size = (size + fptr_align - 1) & ~(fptr_align - 1);
+	return std::max(size, fptr_size);
+}
+
 template <typename F>
 auto task_invoke(F &&f) -> decltype(std::forward<F>(f)());
 
@@ -203,7 +211,7 @@ class trivial_task
 public:
 	using result_type = R;
 
-	static constexpr std::size_t memory_size = S;
+	static constexpr std::size_t memory_size = detail::align_size(S);
 
 	constexpr trivial_task() noexcept = default;
 	constexpr trivial_task(std::nullptr_t) noexcept {}
@@ -220,6 +228,8 @@ public:
 			"a trivial_task target result type mismatch");
 		static_assert(std::is_trivially_copyable<target_type>::value,
 			      "a trivial_task target is not trivially copyable");
+		static_assert(std::is_trivially_destructible<target_type>::value,
+			      "a trivial_task target is not trivially destructible");
 		static_assert(sizeof(target_type) <= sizeof(memory_),
 			      "a trivial_task target size limit is exceeded");
 
@@ -272,7 +282,7 @@ private:
 };
 
 template <typename R, std::size_t S = fptr_size, typename A = std::allocator<char>>
-class task : private trivial_task<R, std::max(S, fptr_size)>
+class task : private trivial_task<R, S>
 {
 	using base = trivial_task<R, S>;
 
