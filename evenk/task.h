@@ -128,7 +128,8 @@ static constexpr std::size_t fptr_align = alignof(void (*)());
 
 namespace detail {
 
-static constexpr std::size_t align_size(std::size_t size)
+/* A utility to adjust the reserved memory size for tasks. */
+static constexpr std::size_t adjust_size(std::size_t size)
 {
 	static_assert((fptr_align & (fptr_align - 1)) == 0,
 		      "function pointer alignment is not a power of two");
@@ -211,7 +212,7 @@ class trivial_task
 public:
 	using result_type = R;
 
-	static constexpr std::size_t memory_size = detail::align_size(S);
+	static constexpr std::size_t memory_size = detail::adjust_size(S);
 
 	constexpr trivial_task() noexcept = default;
 	constexpr trivial_task(std::nullptr_t) noexcept {}
