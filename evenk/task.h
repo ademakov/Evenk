@@ -75,6 +75,11 @@
 // if the function object is passed by reference. In this case the object
 // in question must be kept alive separately until the task is in use.
 //
+// Also before invocation a trivial_task requires a manual check of its
+// validity. Invoking invalid trivial_task leads to invalid memory access.
+// In contrast to this a task (and std::function) automatically handles
+// such cases by gently throwing std::bad_function_call().
+//
 // Examples:
 //
 //   void test() { ... }
@@ -255,16 +260,14 @@ public:
 		std::swap(memory_, other.memory_);
 	}
 
-	result_type operator()()
-	{
-		if (invoke_ == nullptr)
-			throw std::bad_function_call();
-		return (*invoke_)(&memory_);
-	}
-
 	explicit operator bool() const noexcept
 	{
 		return invoke_ != nullptr;
+	}
+
+	result_type operator()()
+	{
+		return (*invoke_)(&memory_);
 	}
 
 protected:
@@ -273,6 +276,9 @@ protected:
 
 	memory_type memory_ = {0};
 	invoke_type invoke_ = nullptr;
+
+	constexpr trivial_task(std::nullptr_t, invoke_type invoke) noexcept
+	: invoke_(invoke) {}
 
 private:
 	template <typename Target>
@@ -293,8 +299,8 @@ public:
 
 	using base::memory_size;
 
-	constexpr task() noexcept = default;
-	constexpr task(std::nullptr_t) noexcept {}
+	constexpr task() noexcept : base(nullptr, invalid_invoke) {}
+	constexpr task(std::nullptr_t) noexcept : base(nullptr, invalid_invoke) {}
 
 	template <typename Callable>
 	task(Callable &&callable, const allocator_type &alloc = allocator_type())
@@ -326,7 +332,7 @@ public:
 
 	~task() noexcept
 	{
-		if (base::operator bool())
+		if (operator bool())
 			wrapper_.destroy_(base::memory_, wrapper_);
 	}
 
@@ -347,8 +353,12 @@ public:
 		std::swap(wrapper_, other.wrapper_);
 	}
 
+	explicit operator bool() const noexcept
+	{
+		return wrapper_.destroy_ != nullptr;
+	}
+
 	using base::operator();
-	using base::operator bool;
 
 private:
 	using destroy_type = void (*)(void *, allocator_type &);
@@ -367,6 +377,11 @@ private:
 	};
 
 	data_destroy_wrapper wrapper_;
+
+	static result_type invalid_invoke(void *)
+	{
+		throw std::bad_function_call();
+	}
 
 	template <typename Target>
 	static result_type invoke(void *memory)
