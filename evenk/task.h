@@ -1,7 +1,7 @@
 //
 // Executable Tasks
 //
-// Copyright (c) 2017  Aleksey Demakov
+// Copyright (c) 2017-2018  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -133,14 +133,20 @@ static constexpr std::size_t fptr_align = alignof(void (*)());
 
 namespace detail {
 
-/* A utility to adjust the reserved memory size for tasks. */
-static constexpr std::size_t adjust_size(std::size_t size)
+// A utility to adjust the reserved memory size for tasks.
+static constexpr std::size_t task_memory_size(std::size_t size)
 {
 	static_assert((fptr_align & (fptr_align - 1)) == 0,
 		      "function pointer alignment is not a power of two");
 	size = (size + fptr_align - 1) & ~(fptr_align - 1);
 	return std::max(size, fptr_size);
 }
+
+//
+// Some template meta-programming stuff that reproduces C++11 std::result_of
+// or C++17 std::invoke_result in a compiler independent way. It is relatively
+// easy to do here as there is no need to support any arguments.
+//
 
 template <typename F>
 auto task_invoke(F &&f) -> decltype(std::forward<F>(f)());
@@ -161,11 +167,11 @@ struct task_result : task_result_base<void, F>
 {
 };
 
-template <bool>
-struct task_adapter;
+//
+// Helpers to manage different kinds of tasks uniformly.
+//
 
-template <>
-struct task_adapter<true>
+struct task_adapter_small
 {
 	template <typename Target>
 	Target *get(void *memory)
@@ -184,8 +190,7 @@ struct task_adapter<true>
 	}
 };
 
-template <>
-struct task_adapter<false>
+struct task_adapter_large
 {
 	template <typename Target>
 	Target *get(void *memory)
@@ -209,6 +214,9 @@ struct task_adapter<false>
 	}
 };
 
+template<typename T, std::size_t S>
+using task_adapter = typename std::conditional<sizeof(T) <= S, task_adapter_small, task_adapter_large>::type;
+
 } // namespace detail
 
 template <typename R, std::size_t S = fptr_size>
@@ -217,7 +225,7 @@ class trivial_task
 public:
 	using result_type = R;
 
-	static constexpr std::size_t memory_size = detail::adjust_size(S);
+	static constexpr std::size_t memory_size = detail::task_memory_size(S);
 
 	constexpr trivial_task() noexcept = default;
 	constexpr trivial_task(std::nullptr_t) noexcept {}
@@ -304,7 +312,7 @@ public:
 
 	template <typename Callable>
 	task(Callable &&callable, const allocator_type &alloc = allocator_type())
-		: wrapper_(alloc)
+		: base(nullptr, &invoke<typename std::decay<Callable>::type>), wrapper_(alloc)
 	{
 		using target_type = typename std::decay<Callable>::type;
 		using target_result_type = typename detail::task_result<target_type>::type;
@@ -314,19 +322,18 @@ public:
 				std::is_convertible<target_result_type, result_type>::value,
 			"a task target result type mismatch");
 
-#if 0
+#if EVENK_TASK_DEBUG
 		printf("sizeof(memory_) = %zu, sizeof(callable_type) = %zu, task size: %zu\n",
 		       sizeof(base::memory_),
 		       sizeof(target_type),
 		       sizeof(*this));
 #endif
 
-		detail::task_adapter<sizeof(target_type) <= memory_size> adapter;
+		detail::task_adapter<target_type, memory_size> adapter;
 		adapter.template allocate<target_type>(base::memory_, wrapper_);
 		new (adapter.template get<void>(base::memory_))
 			target_type(std::forward<Callable>(callable));
 
-		base::invoke_ = &invoke<target_type>;
 		wrapper_.destroy_ = &destroy<target_type>;
 	}
 
@@ -386,14 +393,14 @@ private:
 	template <typename Target>
 	static result_type invoke(void *memory)
 	{
-		detail::task_adapter<sizeof(Target) <= memory_size> adapter;
+		detail::task_adapter<Target, memory_size> adapter;
 		return (*adapter.template get<Target>(memory))();
 	}
 
 	template <typename Target>
 	static void destroy(void *memory, allocator_type &alloc)
 	{
-		detail::task_adapter<sizeof(Target) <= memory_size> adapter;
+		detail::task_adapter<Target, memory_size> adapter;
 		adapter.template get<Target>(memory)->~Target();
 		adapter.template deallocate<Target>(memory, alloc);
 	}
