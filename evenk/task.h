@@ -133,7 +133,7 @@ static constexpr std::size_t fptr_align = alignof(void (*)());
 
 namespace detail {
 
-// A utility to adjust the reserved memory size for tasks.
+// A utility to adjust the size of reserved memory for tasks.
 static constexpr std::size_t
 task_memory_size(std::size_t size)
 {
@@ -226,6 +226,7 @@ public:
 
 	template <typename Callable>
 	trivial_task(Callable &&callable)
+		: invoke_(&invoke<typename std::decay<Callable>::type>)
 	{
 		using target_type = typename std::decay<Callable>::type;
 		using target_result_type = typename detail::task_result<target_type>::type;
@@ -242,7 +243,6 @@ public:
 			      "a trivial_task target size limit is exceeded");
 
 		new (&memory_) target_type(std::forward<Callable>(callable));
-		invoke_ = &invoke<target_type>;
 	}
 
 	trivial_task(trivial_task &&other) noexcept
