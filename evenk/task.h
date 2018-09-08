@@ -134,7 +134,8 @@ static constexpr std::size_t fptr_align = alignof(void (*)());
 namespace detail {
 
 // A utility to adjust the reserved memory size for tasks.
-static constexpr std::size_t task_memory_size(std::size_t size)
+static constexpr std::size_t
+task_memory_size(std::size_t size)
 {
 	static_assert((fptr_align & (fptr_align - 1)) == 0,
 		      "function pointer alignment is not a power of two");
@@ -171,42 +172,34 @@ struct task_result : task_result_base<void, F>
 // Helpers to manage different kinds of tasks uniformly.
 //
 
+template <typename Target, typename Alloc>
 struct task_adapter_small
 {
-	template <typename Target>
 	Target *get(void *memory)
 	{
 		return static_cast<Target *>(memory);
 	}
 
-	template <typename Target, typename Alloc>
-	void allocate(void *, Alloc &)
-	{
-	}
+	void allocate(void *, Alloc &) {}
 
-	template <typename Target, typename Alloc>
-	void deallocate(void *, Alloc &)
-	{
-	}
+	void deallocate(void *, Alloc &) {}
 };
 
+template <typename Target, typename Alloc>
 struct task_adapter_large
 {
-	template <typename Target>
 	Target *get(void *memory)
 	{
 		void **ptrptr = static_cast<void **>(memory);
 		return static_cast<Target *>(*ptrptr);
 	}
 
-	template <typename Target, typename Alloc>
 	void allocate(void *memory, Alloc &alloc)
 	{
 		auto ptrptr = static_cast<char **>(memory);
 		*ptrptr = alloc.allocate(sizeof(Target));
 	}
 
-	template <typename Target, typename Alloc>
 	void deallocate(void *memory, Alloc &alloc)
 	{
 		auto ptrptr = static_cast<char **>(memory);
@@ -214,8 +207,9 @@ struct task_adapter_large
 	}
 };
 
-template<typename T, std::size_t S>
-using task_adapter = typename std::conditional<sizeof(T) <= S, task_adapter_small, task_adapter_large>::type;
+template <typename T, std::size_t S, typename A>
+using task_adapter = typename std::
+	conditional<sizeof(T) <= S, task_adapter_small<T, A>, task_adapter_large<T, A>>::type;
 
 } // namespace detail
 
@@ -285,8 +279,7 @@ protected:
 	memory_type memory_ = {0};
 	invoke_type invoke_ = nullptr;
 
-	constexpr trivial_task(std::nullptr_t, invoke_type invoke) noexcept
-	: invoke_(invoke) {}
+	constexpr trivial_task(std::nullptr_t, invoke_type invoke) noexcept : invoke_(invoke) {}
 
 private:
 	template <typename Target>
@@ -329,10 +322,9 @@ public:
 		       sizeof(*this));
 #endif
 
-		detail::task_adapter<target_type, memory_size> adapter;
-		adapter.template allocate<target_type>(base::memory_, wrapper_);
-		new (adapter.template get<void>(base::memory_))
-			target_type(std::forward<Callable>(callable));
+		detail::task_adapter<target_type, memory_size, allocator_type> adapter;
+		adapter.allocate(base::memory_, wrapper_);
+		new (adapter.get(base::memory_)) target_type(std::forward<Callable>(callable));
 
 		wrapper_.destroy_ = &destroy<target_type>;
 	}
@@ -393,16 +385,16 @@ private:
 	template <typename Target>
 	static result_type invoke(void *memory)
 	{
-		detail::task_adapter<Target, memory_size> adapter;
-		return (*adapter.template get<Target>(memory))();
+		detail::task_adapter<Target, memory_size, allocator_type> adapter;
+		return (*adapter.get(memory))();
 	}
 
 	template <typename Target>
 	static void destroy(void *memory, allocator_type &alloc)
 	{
-		detail::task_adapter<Target, memory_size> adapter;
-		adapter.template get<Target>(memory)->~Target();
-		adapter.template deallocate<Target>(memory, alloc);
+		detail::task_adapter<Target, memory_size, allocator_type> adapter;
+		adapter.get(memory)->~Target();
+		adapter.deallocate(memory, alloc);
 	}
 };
 
