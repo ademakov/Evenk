@@ -180,6 +180,14 @@ struct task_adapter_small
 		return static_cast<Target *>(memory);
 	}
 
+	void move(void *memory, void *other_memory)
+	{
+		auto ptr = static_cast<Target *>(memory);
+		auto other_ptr = static_cast<Target *>(other_memory);
+		new (ptr) Target(std::move(*other_ptr));
+		other_ptr->~Target();
+	}
+
 	void allocate(void *, Alloc &) {}
 
 	void deallocate(void *, Alloc &) {}
@@ -192,6 +200,14 @@ struct task_adapter_large
 	{
 		void **ptrptr = static_cast<void **>(memory);
 		return static_cast<Target *>(*ptrptr);
+	}
+
+	void move(void *memory, void *other_memory)
+	{
+		void **ptrptr = static_cast<void **>(memory);
+		void **other_ptrptr = static_cast<void **>(other_memory);
+		*ptrptr = *other_ptrptr;
+		*other_ptrptr = nullptr;
 	}
 
 	void allocate(void *memory, Alloc &alloc)
@@ -326,18 +342,20 @@ public:
 		adapter.allocate(base::memory_, wrapper_);
 		new (adapter.get(base::memory_)) target_type(std::forward<Callable>(callable));
 
-		wrapper_.destroy_ = &destroy<target_type>;
+		wrapper_.helper_ = &helper<target_type>;
 	}
 
 	~task() noexcept
 	{
 		if (operator bool())
-			wrapper_.destroy_(base::memory_, wrapper_);
+			wrapper_.helper_(this, nullptr);
 	}
 
-	task(task &&other) noexcept
+	task(task &&other) noexcept : base(nullptr, other.invoke_)
 	{
-		other.swap(*this);
+		other.wrapper_.helper_(this, &other);
+		std::swap(other.wrapper_.helper_, wrapper_.helper_);
+		other.invoke_ = invalid_invoke;
 	}
 
 	task &operator=(task &&other) noexcept
@@ -348,34 +366,33 @@ public:
 
 	void swap(task &other) noexcept
 	{
-		base::swap(other);
-		std::swap(wrapper_, other.wrapper_);
+		std::swap(*this, other);
 	}
 
 	explicit operator bool() const noexcept
 	{
-		return wrapper_.destroy_ != nullptr;
+		return wrapper_.helper_ != nullptr;
 	}
 
 	using base::operator();
 
 private:
-	using destroy_type = void (*)(void *, allocator_type &);
+	using helper_type = void (*)(task *, task *);
 
 	// Use empty-base optimization trick to store the allocator instance.
-	struct data_destroy_wrapper : allocator_type
+	struct helper_wrapper : allocator_type
 	{
-		destroy_type destroy_ = nullptr;
+		helper_type helper_ = nullptr;
 
-		data_destroy_wrapper() = default;
+		helper_wrapper() = default;
 
-		data_destroy_wrapper(const allocator_type &allocator)
+		helper_wrapper(const allocator_type &allocator)
 			: allocator_type(allocator)
 		{
 		}
 	};
 
-	data_destroy_wrapper wrapper_;
+	helper_wrapper wrapper_;
 
 	static result_type invalid_invoke(void *)
 	{
@@ -390,11 +407,15 @@ private:
 	}
 
 	template <typename Target>
-	static void destroy(void *memory, allocator_type &alloc)
+	static void helper(task *this_task, task *other_task)
 	{
 		detail::task_adapter<Target, memory_size, allocator_type> adapter;
-		adapter.get(memory)->~Target();
-		adapter.deallocate(memory, alloc);
+		if (other_task != nullptr) {
+			adapter.move(this_task->memory_, other_task->memory_);
+		} else {
+			adapter.get(this_task->memory_)->~Target();
+			adapter.deallocate(this_task->memory_, this_task->wrapper_);
+		}
 	}
 };
 
