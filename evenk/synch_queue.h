@@ -93,7 +93,7 @@ public:
 	//
 
 	template <typename... Backoff>
-	void push(const value_type &value, Backoff... backoff)
+	void push(const value_type &value, Backoff &&... backoff)
 	{
 		auto status = wait_push(value, std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
@@ -101,7 +101,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	void push(value_type &&value, Backoff... backoff)
+	void push(value_type &&value, Backoff &&... backoff)
 	{
 		auto status = wait_push(std::move(value), std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
@@ -109,7 +109,7 @@ public:
 	}
 
 	template <typename... Backoff>
-	value_type value_pop(Backoff... backoff)
+	value_type value_pop(Backoff &&... backoff)
 	{
 		value_type value;
 		auto status = wait_pop(value, std::forward<Backoff>(backoff)...);
@@ -123,19 +123,19 @@ public:
 	//
 
 	template <typename... Backoff>
-	queue_op_status wait_push(const value_type &value, Backoff... backoff)
+	queue_op_status wait_push(const value_type &value, Backoff &&... backoff)
 	{
 		return try_push(value, std::forward<Backoff>(backoff)...);
 	}
 
 	template <typename... Backoff>
-	queue_op_status wait_push(value_type &&value, Backoff... backoff)
+	queue_op_status wait_push(value_type &&value, Backoff &&... backoff)
 	{
 		return try_push(std::move(value), std::forward<Backoff>(backoff)...);
 	}
 
 	template <typename... Backoff>
-	queue_op_status wait_pop(value_type &value, Backoff... backoff)
+	queue_op_status wait_pop(value_type &value, Backoff &&... backoff)
 	{
 		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		auto status = locked_pop(value);
@@ -151,21 +151,21 @@ public:
 	//
 
 	template <typename... Backoff>
-	queue_op_status try_push(const value_type &value, Backoff... backoff)
+	queue_op_status try_push(const value_type &value, Backoff &&... backoff)
 	{
 		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		return locked_push(value);
 	}
 
 	template <typename... Backoff>
-	queue_op_status try_push(value_type &&value, Backoff... backoff)
+	queue_op_status try_push(value_type &&value, Backoff &&... backoff)
 	{
 		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		return locked_push(std::move(value));
 	}
 
 	template <typename... Backoff>
-	queue_op_status try_pop(value_type &value, Backoff... backoff)
+	queue_op_status try_pop(value_type &value, Backoff &&... backoff)
 	{
 		lock_owner_type guard(lock_, std::forward<Backoff>(backoff)...);
 		return locked_pop(value);

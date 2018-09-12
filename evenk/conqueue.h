@@ -1,7 +1,7 @@
 //
 // Concurrent Queue Basics and Utilities
 //
-// Copyright (c) 2016  Aleksey Demakov
+// Copyright (c) 2016-2017  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -192,7 +192,7 @@ private:
 	queue_type *queue_;
 };
 
-inline namespace detail {
+namespace detail {
 
 //
 // A concurrent queue input iterator. Unlike the underlying queue a given
@@ -348,7 +348,7 @@ public:
 	using reference = value_type &;
 	using const_reference = const value_type &;
 
-	using iterator = queue_output_iterator<queue_type>;
+	using iterator = detail::queue_output_iterator<queue_type>;
 	using const_iterator = const iterator;
 
 	generic_queue_back(queue_type *queue) noexcept : queue_(queue)

@@ -29,7 +29,7 @@ AC_SEARCH_LIBS([pthread_create], [pthread],
         [], [AC_MSG_ERROR(Cannot find pthread library)])
 
 dnl Checks for header files.
-AC_CHECK_HEADERS([pthread.h])
+AC_CHECK_HEADERS([pthread.h sched.h])
 AC_CHECK_HEADERS([linux/futex.h])
 AC_CHECK_HEADERS([xmmintrin.h])
 
@@ -37,6 +37,7 @@ dnl Checks for typedefs, structures, and compiler characteristics.
 AX_CXX_COMPILE_STDCXX_14([noext], [mandatory])
 
 dnl Checks for library functions.
+AC_CHECK_FUNCS(pthread_setaffinity_np)
 
 dnl Check command line arguments
 
