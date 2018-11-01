@@ -75,7 +75,7 @@ public:
 	virtual queue_op_status wait_pop(value_type &) = 0;
 
 	// Non-waiting operations
-	virtual queue_op_status try_push(const value_type &e) = 0;
+	virtual queue_op_status try_push(const value_type &) = 0;
 	virtual queue_op_status try_push(value_type &&) = 0;
 	virtual queue_op_status try_pop(value_type &) = 0;
 
