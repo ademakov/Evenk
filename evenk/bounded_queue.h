@@ -39,37 +39,36 @@
 #include "synch.h"
 
 namespace evenk {
+namespace bounded_queue {
 
-inline namespace detail {
+namespace detail {
 
 // Status flags of a bounded queue slot.
-enum bounded_queue_status : std::uint32_t {
+enum status : std::uint32_t {
 	// the slot is empty
-	bounded_queue_empty = 0,
+	status_empty = 0,
 	// the slot contains a value
-	bounded_queue_valid = 1,
+	status_valid = 1,
 	// the slot is closed
-	bounded_queue_closed = 2,
+	status_closed = 2,
 	// the slot contains invalid value
-	bounded_queue_failed = 4,
+	status_failed = 4,
 	// there is a waiting thread on the slot (if futex-based)
-	bounded_queue_waiting = 8,
+	status_waiting = 8,
 };
 
 // The bit mask that selects value status.
-constexpr std::uint32_t bounded_queue_status_mask
-	= bounded_queue_valid | bounded_queue_closed | bounded_queue_failed;
+constexpr std::uint32_t status_mask = status_valid | status_closed | status_failed;
 
 // The bit mask that selects ticket number.
-constexpr std::uint32_t bounded_queue_ticket_mask
-	= ~(bounded_queue_status_mask | bounded_queue_waiting);
+constexpr std::uint32_t ticket_mask = ~(status_mask | status_waiting);
 
 // The minimum queue size that allows combined slot status and ticket encoding.
-constexpr std::uint32_t bounded_queue_min_size = 16;
+constexpr std::uint32_t min_size = 16;
 
 } // namespace detail
 
-class bq_slot : protected std::atomic<std::uint32_t>
+class spin : protected std::atomic<std::uint32_t>
 {
 public:
 	using base = std::atomic<std::uint32_t>;
@@ -84,7 +83,7 @@ public:
 		std::uint32_t value = base::load(std::memory_order_relaxed);
 		for (;;) {
 			std::uint32_t round_value = value - index;
-			round_value |= bounded_queue_closed;
+			round_value |= detail::status_closed;
 
 			if (compare_exchange_weak(value,
 						  round_value + index,
@@ -111,7 +110,7 @@ public:
 	}
 };
 
-class bq_yield_slot : public bq_slot
+class yield : public spin
 {
 public:
 	std::uint32_t wait_and_load(std::uint32_t /*index*/, std::uint32_t /*value*/)
@@ -121,7 +120,7 @@ public:
 	}
 };
 
-class bq_futex_slot : public bq_slot
+class futex : public spin
 {
 public:
 	void close(std::uint32_t index)
@@ -129,13 +128,13 @@ public:
 		std::uint32_t value = base::load(std::memory_order_relaxed);
 		for (;;) {
 			std::uint32_t round_value = value - index;
-			round_value |= bounded_queue_closed;
+			round_value |= detail::status_closed;
 
 			if (compare_exchange_weak(value,
 						  round_value + index,
 						  std::memory_order_relaxed,
 						  std::memory_order_relaxed)) {
-				if ((round_value & bounded_queue_waiting) != 0)
+				if ((round_value & detail::status_waiting) != 0)
 					futex_wake(*this, INT32_MAX);
 				break;
 			}
@@ -145,7 +144,7 @@ public:
 	std::uint32_t wait_and_load(std::uint32_t index, std::uint32_t value)
 	{
 		std::uint32_t wait_value = value - index;
-		wait_value |= bounded_queue_waiting;
+		wait_value |= detail::status_waiting;
 		wait_value += index;
 
 		if (compare_exchange_strong(value,
@@ -162,13 +161,13 @@ public:
 	void store_and_wake(std::uint32_t index, std::uint32_t value)
 	{
 		value = exchange(value, std::memory_order_release);
-		if (((value - index) & bounded_queue_waiting) != 0)
+		if (((value - index) & detail::status_waiting) != 0)
 			futex_wake(*this, INT32_MAX);
 	}
 };
 
 template <typename Synch = default_synch>
-class bq_synch_slot : public bq_slot
+class synch : public spin
 {
 public:
 	using lock_type = typename Synch::lock_type;
@@ -179,8 +178,8 @@ public:
 	{
 		lock_owner_type guard(lock_);
 		std::uint32_t value = base::load(std::memory_order_relaxed);
-		if (((value - index) & bounded_queue_closed) == 0)
-			fetch_add(bounded_queue_closed, std::memory_order_relaxed);
+		if (((value - index) & detail::status_closed) == 0)
+			fetch_add(detail::status_closed, std::memory_order_relaxed);
 		cond_.notify_all();
 	}
 
@@ -207,8 +206,8 @@ private:
 	cond_var_type cond_;
 };
 
-template <typename Value, typename Ticket = bq_slot>
-class bounded_queue : non_copyable
+template <typename Value, typename Slot = spin>
+class mpmc : non_copyable
 {
 public:
 	using value_type = Value;
@@ -218,9 +217,9 @@ public:
 	static_assert(std::is_nothrow_default_constructible<Value>::value,
 		      "bounded_queue requires values with nothrow default constructor");
 
-	bounded_queue(std::uint32_t size) : ring_{nullptr}, mask_{size - 1}
+	mpmc(std::uint32_t size) : ring_{nullptr}, mask_{size - 1}
 	{
-		if (size < bounded_queue_min_size)
+		if (size < detail::min_size)
 			throw std::invalid_argument("bounded_queue size must be at least 16");
 		if ((size & mask_) != 0)
 			throw std::invalid_argument(
@@ -235,12 +234,12 @@ public:
 			ring_[i].open(i);
 	}
 
-	bounded_queue(bounded_queue &&other) noexcept : ring_{other.ring_}, mask_{other.mask_}
+	mpmc(mpmc &&other) noexcept : ring_{other.ring_}, mask_{other.mask_}
 	{
 		other.ring_ = nullptr;
 	}
 
-	~bounded_queue()
+	~mpmc()
 	{
 		destroy();
 	}
@@ -260,7 +259,7 @@ public:
 
 	bool is_closed() const noexcept
 	{
-		return (ring_[0].load() & bounded_queue_closed) != 0;
+		return (ring_[0].load() & detail::status_closed) != 0;
 	}
 
 	bool is_empty() const noexcept
@@ -412,7 +411,7 @@ public:
 #endif
 
 private:
-	struct alignas(cache_line_size) ring_slot : public Ticket
+	struct alignas(cache_line_size) ring_slot : public Slot
 	{
 		value_type value;
 	};
@@ -432,9 +431,9 @@ private:
 		auto ticket = slot.load();
 		for (;;) {
 			auto diff = ticket - base;
-			if ((diff & bounded_queue_ticket_mask) == 0)
+			if ((diff & detail::ticket_mask) == 0)
 				return queue_op_status::success;
-			if ((diff & bounded_queue_closed) != 0)
+			if ((diff & detail::status_closed) != 0)
 				return queue_op_status::closed;
 			ticket = slot.wait_and_load(index, ticket);
 		}
@@ -448,9 +447,9 @@ private:
 		auto ticket = slot.load();
 		for (;;) {
 			auto diff = ticket - base;
-			if ((diff & bounded_queue_ticket_mask) == 0)
+			if ((diff & detail::ticket_mask) == 0)
 				return queue_op_status::success;
-			if ((diff & bounded_queue_closed) != 0)
+			if ((diff & detail::status_closed) != 0)
 				return queue_op_status::closed;
 			if (waiting) {
 				ticket = slot.wait_and_load(index, ticket);
@@ -466,15 +465,15 @@ private:
 		auto ticket = slot.load();
 		for (;;) {
 			auto diff = ticket - base;
-			auto status = diff & bounded_queue_status_mask;
+			auto status = diff & detail::status_mask;
 			if (status != 0) {
-				if ((diff & bounded_queue_ticket_mask) == 0) {
-					if ((diff & bounded_queue_valid) != 0)
+				if ((diff & detail::ticket_mask) == 0) {
+					if ((diff & detail::status_valid) != 0)
 						return queue_op_status::success;
-					if ((diff & bounded_queue_failed) != 0)
+					if ((diff & detail::status_failed) != 0)
 						return queue_op_status::empty;
 				}
-				if ((diff & bounded_queue_closed) != 0)
+				if ((diff & detail::status_closed) != 0)
 					return queue_op_status::closed;
 			}
 			ticket = slot.wait_and_load(index, ticket);
@@ -489,15 +488,15 @@ private:
 		auto ticket = slot.load();
 		for (;;) {
 			std::uint32_t diff = ticket - base;
-			auto status = diff & bounded_queue_status_mask;
+			auto status = diff & detail::status_mask;
 			if (status != 0) {
-				if ((diff & bounded_queue_ticket_mask) == 0) {
-					if ((diff & bounded_queue_valid) != 0)
+				if ((diff & detail::ticket_mask) == 0) {
+					if ((diff & detail::status_valid) != 0)
 						return queue_op_status::success;
-					if ((diff & bounded_queue_failed) != 0)
+					if ((diff & detail::status_failed) != 0)
 						return queue_op_status::empty;
 				}
-				if ((diff & bounded_queue_closed) != 0)
+				if ((diff & detail::status_closed) != 0)
 					return queue_op_status::closed;
 			}
 			if (waiting) {
@@ -518,7 +517,7 @@ private:
 		       const value_type &value) noexcept
 	{
 		slot.value = value;
-		slot.store_and_wake(index, tail + bounded_queue_valid);
+		slot.store_and_wake(index, tail + detail::status_valid);
 	}
 
 	template <typename V = value_type,
@@ -531,9 +530,9 @@ private:
 	{
 		try {
 			slot.value = value;
-			slot.store_and_wake(index, tail + bounded_queue_valid);
+			slot.store_and_wake(index, tail + detail::status_valid);
 		} catch (...) {
-			slot.store_and_wake(index, tail + bounded_queue_failed);
+			slot.store_and_wake(index, tail + detail::status_failed);
 			throw;
 		}
 	}
@@ -547,7 +546,7 @@ private:
 		       value_type &&value) noexcept
 	{
 		slot.value = std::move(value);
-		slot.store_and_wake(index, tail + bounded_queue_valid);
+		slot.store_and_wake(index, tail + detail::status_valid);
 	}
 
 	template <typename V = value_type,
@@ -558,9 +557,9 @@ private:
 	{
 		try {
 			slot.value = std::move(value);
-			slot.store_and_wake(index, tail + bounded_queue_valid);
+			slot.store_and_wake(index, tail + detail::status_valid);
 		} catch (...) {
-			slot.store_and_wake(index, tail + bounded_queue_failed);
+			slot.store_and_wake(index, tail + detail::status_failed);
 			throw;
 		}
 	}
@@ -600,8 +599,9 @@ private:
 };
 
 template <typename ValueType>
-using default_bounded_queue = bounded_queue<ValueType, bq_slot>;
+using default_mpmc = mpmc<ValueType, spin>;
 
+} // namespace bounded_queue
 } // namespace evenk
 
 #endif // !EVENK_BOUNDED_QUEUE_H_
