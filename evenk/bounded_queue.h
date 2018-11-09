@@ -156,7 +156,8 @@ public:
 	void close()
 	{
 		token_t t = base::load(std::memory_order_relaxed);
-		while (!compare_exchange_weak(t, t | detail::status_closed,
+		while (!compare_exchange_weak(t,
+					      t | detail::status_closed,
 					      std::memory_order_relaxed,
 					      std::memory_order_relaxed)) {
 		}
@@ -168,10 +169,9 @@ public:
 	{
 		token_t t = token;
 		token_t w = token | detail::status_waiting;
-		if (compare_exchange_strong(t, w,
-					    std::memory_order_relaxed,
-					    std::memory_order_relaxed)
-		    || t == w) {
+		if (compare_exchange_strong(
+			    t, w, std::memory_order_relaxed, std::memory_order_relaxed) ||
+		    t == w) {
 			futex_wait(*this, w);
 			t = base::load(std::memory_order_relaxed);
 		}
@@ -492,8 +492,7 @@ private:
 	}
 
 	template <typename Backoff>
-	queue_op_status
-	wait_head(ring_slot &slot, token_t token, Backoff backoff)
+	queue_op_status wait_head(ring_slot &slot, token_t token, Backoff backoff)
 	{
 		bool waiting = false;
 		token_t t = slot.load();
@@ -518,8 +517,8 @@ private:
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if_t<std::is_nothrow_copy_assignable<V>::value>
-			  * = nullptr>
+		  typename std::enable_if_t<std::is_nothrow_copy_assignable<V>::value> * =
+			  nullptr>
 	void put_value(ring_slot &slot, count_t token, const value_type &value) noexcept
 	{
 		slot.value = value;
@@ -527,8 +526,8 @@ private:
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if_t<not std::is_nothrow_copy_assignable<V>::value>
-			  * = nullptr>
+		  typename std::enable_if_t<not std::is_nothrow_copy_assignable<V>::value> * =
+			  nullptr>
 	void put_value(ring_slot &slot, token_t token, const value_type &value)
 	{
 		try {
@@ -541,8 +540,8 @@ private:
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if_t<std::is_nothrow_move_assignable<V>::value>
-			  * = nullptr>
+		  typename std::enable_if_t<std::is_nothrow_move_assignable<V>::value> * =
+			  nullptr>
 	void put_value(ring_slot &slot, token_t token, value_type &&value) noexcept
 	{
 		slot.value = std::move(value);
@@ -550,8 +549,8 @@ private:
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if_t<not std::is_nothrow_move_assignable<V>::value>
-			  * = nullptr>
+		  typename std::enable_if_t<not std::is_nothrow_move_assignable<V>::value> * =
+			  nullptr>
 	void put_value(ring_slot &slot, token_t token, value_type &&value)
 	{
 		try {
@@ -564,8 +563,8 @@ private:
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if_t<std::is_nothrow_move_assignable<V>::value>
-			  * = nullptr>
+		  typename std::enable_if_t<std::is_nothrow_move_assignable<V>::value> * =
+			  nullptr>
 	void get_value(ring_slot &slot, token_t token, value_type &value) noexcept
 	{
 		value = std::move(slot.value);
@@ -573,8 +572,8 @@ private:
 	}
 
 	template <typename V = value_type,
-		  typename std::enable_if_t<not std::is_nothrow_move_assignable<V>::value>
-			  * = nullptr>
+		  typename std::enable_if_t<not std::is_nothrow_move_assignable<V>::value> * =
+			  nullptr>
 	void get_value(ring_slot &slot, token_t token, value_type &value)
 	{
 		try {
