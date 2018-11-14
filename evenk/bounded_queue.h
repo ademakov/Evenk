@@ -27,7 +27,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <cstdlib>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
@@ -232,29 +231,15 @@ public:
 	using reference = value_type &;
 	using const_reference = const value_type &;
 
-	static_assert(std::is_nothrow_default_constructible<Value>::value,
-		      "bounded_queue requires values with nothrow default constructor");
+	static_assert(std::is_nothrow_default_constructible<value_type>::value,
+		      "value_type must be nothrow-default-constructible");
+	static_assert(std::is_nothrow_destructible<value_type>::value,
+		      "value_type must be nothrow-destructible");
 
-	ring(count_t size) : ring_{nullptr}, mask_{size - 1}
+	ring(count_t size) : ring_{create(size)}, mask_{size - 1}
 	{
-		if (size < detail::min_size)
-			throw std::invalid_argument("bounded_queue size must be at least 16");
-		if ((size & mask_) != 0)
-			throw std::invalid_argument(
-				"bounded_queue size must be a power of two");
-
-		void *ring;
-		if (::posix_memalign(&ring, cache_line_size, size * sizeof(ring_slot)))
-			throw std::bad_alloc();
-
-		ring_ = new (ring) ring_slot[size];
 		for (count_t i = 0; i < size; i++)
 			ring_[i].init(i & detail::ticket_mask);
-	}
-
-	ring(ring &&other) noexcept : ring_{other.ring_}, mask_{other.mask_}
-	{
-		other.ring_ = nullptr;
 	}
 
 	~ring()
@@ -270,7 +255,10 @@ public:
 	{
 		count_t count = tail_.fetch_add(mask_ + 1);
 		for (count_t i = 0; i < (mask_ + 1); i++) {
-			ring_[(count++ & mask_)].close();
+			const token_t token = count & detail::ticket_mask;
+			ring_slot &slot = ring_[count++ & mask_];
+			wait_tail(slot, token);
+			slot.close();
 		}
 	}
 
@@ -434,14 +422,24 @@ private:
 		value_type value;
 	};
 
+	static ring_slot* create(std::size_t size)
+	{
+		if (size < detail::min_size)
+			throw std::invalid_argument("bounded_queue size must be at least 16");
+		if ((size & (size - 1)) != 0)
+			throw std::invalid_argument(
+				"bounded_queue size must be a power of two");
+
+		void *ring = cache_aligned_alloc(size * sizeof(ring_slot));
+		return new (ring) ring_slot[size];
+	}
+
 	void destroy()
 	{
-		if (ring_ != nullptr) {
-			count_t size = mask_ + 1;
-			for (count_t i = 0; i < size; i++)
-				ring_[i].~ring_slot();
-			std::free(ring_);
-		}
+		const count_t size = mask_ + 1;
+		for (count_t i = 0; i < size; i++)
+			ring_[i].~ring_slot();
+		std::free(ring_);
 	}
 
 	queue_op_status wait_tail(ring_slot &slot, token_t token)
