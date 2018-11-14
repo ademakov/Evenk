@@ -1,7 +1,7 @@
 //
 // Basic Definitions
 //
-// Copyright (c) 2015-2016  Aleksey Demakov
+// Copyright (c) 2015-2018  Aleksey Demakov
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@
 #define EVENK_BASIC_H_
 
 #include <cstddef>
+#include <cstdlib>
 #include <system_error>
 
 namespace evenk {
@@ -48,6 +49,21 @@ throw_system_error(int err_num, const char *what)
 throw_system_error(int err_num, const std::string &what)
 {
 	throw std::system_error(err_num, std::system_category(), what);
+}
+
+inline void *
+aligned_alloc(std::size_t alignment, std::size_t size)
+{
+	void *result;
+	if (::posix_memalign(&result, alignment, size))
+		throw std::bad_alloc();
+	return result;
+}
+
+inline void *
+cache_aligned_alloc(std::size_t size)
+{
+	return aligned_alloc(cache_line_size, size);
 }
 
 class non_copyable
