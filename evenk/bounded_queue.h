@@ -51,19 +51,26 @@ namespace detail {
 enum status_t : token_t {
 	// the slot contains a value
 	status_valid = 1,
-	// the slot is closed
-	status_closed = 2,
 	// the slot contains invalid value
-	status_invalid = 4,
+	status_invalid = 2,
 	// there is a waiting thread on the slot (if futex-based)
-	status_waiting = 8,
+	status_waiting = 4,
+	// the slot is closed
+	status_closed = 8,
+};
+
+enum close_t : std::uint8_t
+{
+	open = 0,
+	closing = 1,
+	closed = 2,
 };
 
 // The bit mask that selects value status.
-constexpr token_t status_mask = status_valid | status_closed | status_invalid;
+constexpr token_t status_mask = status_valid | status_invalid;
 
 // The bit mask that selects ticket number.
-constexpr token_t ticket_mask = ~(status_mask | status_waiting);
+constexpr token_t ticket_mask = ~(status_mask | status_waiting | status_closed);
 
 // The minimum queue size that allows combined slot status and ticket encoding.
 constexpr count_t min_size = 16;
@@ -113,14 +120,13 @@ class spin : protected std::atomic<token_t>
 public:
 	using base = std::atomic<token_t>;
 
-	void init(token_t token)
+	void init(token_t t)
 	{
-		store(token, std::memory_order_relaxed);
+		store(t, std::memory_order_relaxed);
 	}
 
 	void close()
 	{
-		fetch_or(detail::status_closed, std::memory_order_relaxed);
 	}
 
 	token_t load() const
@@ -128,21 +134,21 @@ public:
 		return base::load(std::memory_order_acquire);
 	}
 
-	token_t wait(token_t /*token*/)
+	token_t wait(token_t)
 	{
 		return base::load(std::memory_order_relaxed);
 	}
 
-	void wake(token_t token)
+	void wake(token_t t)
 	{
-		store(token, std::memory_order_release);
+		store(t, std::memory_order_release);
 	}
 };
 
 class yield : public spin
 {
 public:
-	token_t wait(token_t /*token*/)
+	token_t wait(token_t)
 	{
 		std::this_thread::yield();
 		return base::load(std::memory_order_relaxed);
@@ -155,32 +161,30 @@ public:
 	void close()
 	{
 		token_t t = base::load(std::memory_order_relaxed);
-		while (!compare_exchange_weak(t,
-					      t | detail::status_closed,
-					      std::memory_order_relaxed,
-					      std::memory_order_relaxed)) {
-		}
+		token_t x = t | detail::status_closed;
+		while (!compare_exchange_weak(
+			       t, x, std::memory_order_relaxed, std::memory_order_relaxed))
+			x = t | detail::status_closed;
 		if ((t & detail::status_waiting) != 0)
 			futex_wake(*this, INT32_MAX);
 	}
 
-	token_t wait(token_t token)
+	token_t wait(token_t t)
 	{
-		token_t t = token;
-		token_t w = token | detail::status_waiting;
+		token_t x = t | detail::status_waiting;
 		if (compare_exchange_strong(
-			    t, w, std::memory_order_relaxed, std::memory_order_relaxed) ||
-		    t == w) {
-			futex_wait(*this, w);
+			    t, x, std::memory_order_relaxed, std::memory_order_relaxed) ||
+		    t == x) {
+			futex_wait(*this, x);
 			t = base::load(std::memory_order_relaxed);
 		}
 		return t;
 	}
 
-	void wake(token_t token)
+	void wake(token_t t)
 	{
-		token = exchange(token, std::memory_order_release);
-		if ((token & detail::status_waiting) != 0)
+		t = exchange(t, std::memory_order_release);
+		if ((t & detail::status_waiting) != 0)
 			futex_wake(*this, INT32_MAX);
 	}
 };
@@ -196,25 +200,27 @@ public:
 	void close()
 	{
 		lock_owner_type guard(lock_);
-		fetch_or(detail::status_closed, std::memory_order_relaxed);
+		token_t t = base::load(std::memory_order_relaxed);
+		token_t x = t | detail::status_closed;
+		store(x, std::memory_order_relaxed);
 		cond_.notify_all();
 	}
 
-	token_t wait(token_t token)
+	token_t wait(token_t t)
 	{
 		lock_owner_type guard(lock_);
-		token_t t = base::load(std::memory_order_relaxed);
-		if (t == token) {
+		token_t v = base::load(std::memory_order_relaxed);
+		if (t == v) {
 			cond_.wait(guard);
-			t = base::load(std::memory_order_relaxed);
+			v = base::load(std::memory_order_relaxed);
 		}
-		return t;
+		return v;
 	}
 
-	void wake(token_t token)
+	void wake(token_t t)
 	{
 		lock_owner_type guard(lock_);
-		store(token, std::memory_order_relaxed);
+		store(t, std::memory_order_relaxed);
 		cond_.notify_all();
 	}
 
@@ -251,20 +257,41 @@ public:
 	// State operations
 	//
 
+	// FIXME: If there are some waiting producers when the queue is closed
+	// should they be allowed to finish? There is a danger that if there are
+	// no active consumers then such producers will hang indefinitely. But
+	// canceling these producers seems unfair when consumers are just a bit
+	// slow at the moment and sooner or later should unblock the producers.
+	// If there are no consumers a bounded queue blocks producers by design.
+	// Therefore close() probably shouldn't try to solve this case.
 	void close() noexcept
 	{
-		count_t count = tail_.fetch_add(mask_ + 1);
-		for (count_t i = 0; i < (mask_ + 1); i++) {
-			const token_t token = count & detail::ticket_mask;
-			ring_slot &slot = ring_[count++ & mask_];
-			wait_tail(slot, token);
+		const count_t size = mask_ + 1;
+
+		// Protect against a possible case of concurrent close. Only one
+		// thread may pass beyond the following CAS condition and perform
+		// actual close operation.
+		detail::close_t flag = detail::closing;
+		if (closed_.compare_exchange_strong(flag, detail::open, std::memory_order_acquire,
+						    std::memory_order_relaxed))
+			return;
+
+		// Remember the position of the last allowed producer.
+		last_ = tail_.fetch_add(size);
+
+		// Finish the close operation as such.
+		closed_.store(detail::closed, std::memory_order_release);
+
+		// Wake up possibly sleeping producers and consumers.
+		for (count_t i = 0; i < size; i++) {
+			ring_slot &slot = ring_[(last_ + i) & mask_];
 			slot.close();
 		}
 	}
 
 	bool is_closed() const noexcept
 	{
-		return (ring_[0].load() & detail::status_closed) != 0;
+		return closed_.load(std::memory_order_relaxed);
 	}
 
 	bool is_empty() const noexcept
@@ -329,7 +356,7 @@ public:
 		const token_t token = count & detail::ticket_mask;
 
 		ring_slot &slot = ring_[count & mask_];
-		auto status = wait_tail(slot, token, std::forward<Backoff>(backoff)...);
+		auto status = wait_tail(slot, count, token, std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
 			return status;
 
@@ -344,7 +371,7 @@ public:
 		const token_t token = count & detail::ticket_mask;
 
 		ring_slot &slot = ring_[count & mask_];
-		auto status = wait_tail(slot, token, std::forward<Backoff>(backoff)...);
+		auto status = wait_tail(slot, count, token, std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
 			return status;
 
@@ -360,7 +387,7 @@ public:
 			const token_t token = count & detail::ticket_mask;
 
 			ring_slot &slot = ring_[count & mask_];
-			auto status = wait_head(slot, token, std::forward<Backoff>(backoff)...);
+			auto status = wait_head(slot, count, token, std::forward<Backoff>(backoff)...);
 			if (status != queue_op_status::success) {
 				if (status == queue_op_status::empty)
 					continue;
@@ -425,7 +452,8 @@ private:
 	static ring_slot* create(std::size_t size)
 	{
 		if (size < detail::min_size)
-			throw std::invalid_argument("bounded_queue size must be at least 16");
+			throw std::invalid_argument(
+				"bounded_queue size must be at least" + std::to_string(detail::min_size));
 		if ((size & (size - 1)) != 0)
 			throw std::invalid_argument(
 				"bounded_queue size must be a power of two");
@@ -442,11 +470,21 @@ private:
 		std::free(ring_);
 	}
 
-	queue_op_status wait_tail(ring_slot &slot, token_t token)
+	// FIXME: If somebody incessantly does wait_push() or wait_pop() despite
+	// getting queue_op_status::closed then after 2^31 calls this check will
+	// produce a wrong result.
+	bool is_past_last(count_t count)
+	{
+		if (closed_.load(std::memory_order_acquire) != detail::closed)
+			return false;
+		return std::make_signed_t<count_t>(last_ - count) <= 0;
+	}
+
+	queue_op_status wait_tail(ring_slot &slot, const count_t count, const token_t token)
 	{
 		token_t t = slot.load();
 		while ((t & detail::ticket_mask) != token) {
-			if ((t & detail::status_closed) != 0)
+			if (is_past_last(count))
 				return queue_op_status::closed;
 			t = slot.wait(t);
 		}
@@ -454,12 +492,12 @@ private:
 	}
 
 	template <typename Backoff>
-	queue_op_status wait_tail(ring_slot &slot, token_t token, Backoff backoff)
+	queue_op_status wait_tail(ring_slot &slot, const count_t count, const token_t token, Backoff backoff)
 	{
 		bool waiting = false;
 		token_t t = slot.load();
 		while ((t & detail::ticket_mask) != token) {
-			if ((t & detail::status_closed) != 0)
+			if (is_past_last(count))
 				return queue_op_status::closed;
 			if (waiting) {
 				t = slot.wait(t);
@@ -471,47 +509,52 @@ private:
 		return queue_op_status::success;
 	}
 
-	queue_op_status wait_head(ring_slot &slot, token_t token)
+	queue_op_status wait_head(ring_slot &slot, count_t count, token_t token)
 	{
 		token_t t = slot.load();
-		for (;;) {
-			if ((t & detail::status_mask) != 0) {
-				if ((t & detail::ticket_mask) == token) {
-					if ((t & detail::status_valid) != 0)
-						return queue_op_status::success;
-					if ((t & detail::status_invalid) != 0)
-						return queue_op_status::empty;
-				}
-				if ((t & detail::status_closed) != 0)
-					return queue_op_status::closed;
-			}
+		while ((t & detail::ticket_mask) != token) {
+			if (is_past_last(count))
+				return queue_op_status::closed;
 			t = slot.wait(t);
 		}
+		while ((t & detail::status_mask) == 0) {
+			if (is_past_last(count))
+				return queue_op_status::closed;
+			t = slot.wait(t);
+		}
+		if ((t & detail::status_valid) == 0)
+			return queue_op_status::empty;
+		return queue_op_status::success;
 	}
 
 	template <typename Backoff>
-	queue_op_status wait_head(ring_slot &slot, token_t token, Backoff backoff)
+	queue_op_status wait_head(ring_slot &slot, count_t count, token_t token, Backoff backoff)
 	{
 		bool waiting = false;
 		token_t t = slot.load();
-		for (;;) {
-			if ((t & detail::status_mask) != 0) {
-				if ((t & detail::ticket_mask) == token) {
-					if ((t & detail::status_valid) != 0)
-						return queue_op_status::success;
-					if ((t & detail::status_invalid) != 0)
-						return queue_op_status::empty;
-				}
-				if ((t & detail::status_closed) != 0)
-					return queue_op_status::closed;
-			}
+		while ((t & detail::ticket_mask) != token) {
+			if (is_past_last(count))
+				return queue_op_status::closed;
 			if (waiting) {
 				t = slot.wait(t);
 				continue;
 			}
 			waiting = backoff();
-			t = slot.load();
+			t = slot.wait(t);
 		}
+		while ((t & detail::status_mask) == 0) {
+			if (is_past_last(count))
+				return queue_op_status::closed;
+			if (waiting) {
+				t = slot.wait(t);
+				continue;
+			}
+			waiting = backoff();
+			t = slot.wait(t);
+		}
+		if ((t & detail::status_valid) == 0)
+			return queue_op_status::empty;
+		return queue_op_status::success;
 	}
 
 	template <typename V = value_type,
@@ -585,6 +628,9 @@ private:
 
 	ring_slot *ring_;
 	const count_t mask_;
+
+	std::atomic<detail::close_t> closed_ = { detail::open };
+	count_t last_;
 
 	alignas(cache_line_size) ConsumerCounter head_;
 	alignas(cache_line_size) ProducerCounter tail_;
