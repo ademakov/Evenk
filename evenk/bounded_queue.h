@@ -91,6 +91,12 @@ public:
 		return count;
 	}
 
+	bool try_increment(count_t count)
+	{
+		count_ = count + 1;
+		return true;
+	}
+
 private:
 	count_t count_ = 0;
 };
@@ -107,6 +113,13 @@ public:
 	count_t fetch_add(count_t addend)
 	{
 		return count_.fetch_add(addend, std::memory_order_relaxed);
+	}
+
+	bool try_increment(count_t count)
+	{
+		return count_.compare_exchange_strong(count, count + 1,
+						      std::memory_order_relaxed,
+						      std::memory_order_relaxed);
 	}
 
 private:
@@ -354,8 +367,8 @@ public:
 	{
 		const count_t count = tail_.fetch_add(1);
 		const token_t token = count & detail::ticket_mask;
-
 		ring_slot &slot = ring_[count & mask_];
+
 		auto status = wait_tail(slot, count, token, std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
 			return status;
@@ -369,8 +382,8 @@ public:
 	{
 		const count_t count = tail_.fetch_add(1);
 		const token_t token = count & detail::ticket_mask;
-
 		ring_slot &slot = ring_[count & mask_];
+
 		auto status = wait_tail(slot, count, token, std::forward<Backoff>(backoff)...);
 		if (status != queue_op_status::success)
 			return status;
@@ -385,12 +398,14 @@ public:
 		for (;;) {
 			const count_t count = head_.fetch_add(1);
 			const token_t token = count & detail::ticket_mask;
-
 			ring_slot &slot = ring_[count & mask_];
+
 			auto status = wait_head(slot, count, token, std::forward<Backoff>(backoff)...);
 			if (status != queue_op_status::success) {
-				if (status == queue_op_status::empty)
+				if (status == queue_op_status::empty) {
+					slot.wake(token + mask_ + 1);
 					continue;
+				}
 				return status;
 			}
 
@@ -399,26 +414,74 @@ public:
 		}
 	}
 
-#if 0
 	//
 	// Non-waiting operations
 	//
 
-	template <typename... Backoff>
-	queue_op_status try_push(const value_type &value, Backoff... backoff)
+	queue_op_status try_push(const value_type &value)
 	{
+		const count_t count = tail_.load(std::memory_order_relaxed);
+		const token_t token = count & detail::ticket_mask;
+		ring_slot &slot = ring_[count & mask_];
+
+		token_t t = slot.load();
+		if ((t & detail::ticket_mask) != token) {
+			if (is_past_last(count))
+				return queue_op_status::closed;
+			return queue_op_status::empty;
+		}
+
+		if (!head_.try_increment(count))
+			return queue_op_status::full;
+
+		put_value(slot, token, value);
+		return queue_op_status::success;
 	}
 
-	template <typename... Backoff>
-	queue_op_status try_push(value_type &&value, Backoff... backoff)
+	queue_op_status try_push(value_type &&value)
 	{
+		const count_t count = tail_.load(std::memory_order_relaxed);
+		const token_t token = count & detail::ticket_mask;
+		ring_slot &slot = ring_[count & mask_];
+
+		token_t t = slot.load();
+		if ((t & detail::ticket_mask) != token) {
+			if (is_past_last(count))
+				return queue_op_status::closed;
+			return queue_op_status::empty;
+		}
+
+		if (!head_.try_increment(count))
+			return queue_op_status::full;
+
+		put_value(slot, token, std::move(value));
+		return queue_op_status::success;
 	}
 
-	template <typename... Backoff>
-	queue_op_status try_pop(value_type &value, Backoff... backoff)
+	queue_op_status try_pop(value_type &value)
 	{
+		const count_t count = head_.load(std::memory_order_relaxed);
+		const token_t token = count & detail::ticket_mask;
+		ring_slot &slot = ring_[count & mask_];
+
+		token_t t = slot.load();
+		if ((t & detail::ticket_mask) != token || (t & detail::status_mask) == 0) {
+			if (is_past_last(count))
+				return queue_op_status::closed;
+			return queue_op_status::empty;
+		}
+
+		if (!head_.try_increment(count))
+			return queue_op_status::empty;
+
+		if ((t & detail::status_valid) == 0) {
+			slot.wake(token + mask_ + 1);
+			return queue_op_status::empty;
+		}
+
+		get_value(slot, token, value);
+		return queue_op_status::success;
 	}
-#endif
 
 #if 0 && ENABLE_QUEUE_NONBLOCKING_OPS
 	//
@@ -427,19 +490,6 @@ public:
 
 	queue_op_status nonblocking_pop(value_type &value)
 	{
-		std::uint32_t head = head_.load(std::memory_order_relaxed);
-		ring_slot &slot = ring_[head & mask_];
-
-		std::uint32_t current_ticket = slot.load();
-		std::uint32_t required_ticket = (head + 1) << bq_status_bits;
-		if ((current_ticket & bq_ticket_mask) != required_ticket)
-			return queue_op_status::empty;
-
-		if (!head_.compare_exchange_strong(head, head + 1, std::memory_order_relaxed))
-			return queue_op_status::busy;
-
-		get_value(slot, head, value);
-		return queue_op_status::success;
 	}
 #endif
 
