@@ -135,6 +135,83 @@ private:
 	std::atomic<base_type> tail_ = ATOMIC_VAR_INIT(0);
 };
 
+class shared_ticket_lock : non_copyable
+{
+public:
+	void lock() noexcept
+	{
+		lock(no_backoff{});
+	}
+
+	template <typename Backoff>
+	void lock(Backoff backoff) noexcept
+	{
+		base_type tail = tail_.fetch_add(exclusive_step, std::memory_order_relaxed);
+		for (;;) {
+			base_type head = head_.load(std::memory_order_acquire);
+			if (tail == head)
+				break;
+			proportional_adapter(backoff, static_cast<base_type>(tail - head));
+		}
+	}
+
+	bool try_lock() noexcept
+	{
+		base_type head = head_.load(std::memory_order_acquire);
+		base_type tail = tail_.load(std::memory_order_relaxed);
+		return head == tail
+		       && tail_.compare_exchange_strong(
+				  tail, tail + exclusive_step, std::memory_order_relaxed);
+
+	}
+
+	void unlock() noexcept
+	{
+		head_.store(head_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+	}
+
+	void lock_shared() noexcept
+	{
+		lock_shared(no_backoff{});
+	}
+
+	template <typename Backoff>
+	void lock_shared(Backoff backoff) noexcept
+	{
+		base_type tail = tail_.fetch_add(shared_step, std::memory_order_relaxed);
+		for (tail &= exclusive_mask;;) {
+			base_type head = head_.load(std::memory_order_acquire);
+			if (tail == (head & exclusive_mask))
+				break;
+			proportional_adapter(backoff, static_cast<base_type>(tail - head));
+		}
+	}
+
+	bool try_lock_shared() noexcept
+	{
+		base_type head = head_.load(std::memory_order_acquire);
+		base_type tail = tail_.load(std::memory_order_relaxed);
+		return (head & exclusive_mask) == (tail & exclusive_mask)
+		       && tail_.compare_exchange_strong(
+				  tail, tail + shared_step, std::memory_order_relaxed);
+
+	}
+
+	void unlock_shared() noexcept
+	{
+		head_.fetch_add(shared_step, std::memory_order_release);
+	}
+
+private:
+	using base_type = std::uint32_t;
+	static constexpr base_type shared_step = 1 << 16;
+	static constexpr base_type exclusive_mask = shared_step - 1;
+	static constexpr base_type exclusive_step = 1;
+
+	std::atomic<base_type> head_ = ATOMIC_VAR_INIT(0);
+	std::atomic<base_type> tail_ = ATOMIC_VAR_INIT(0);
+};
+
 } // namespace evenk
 
 #endif // !EVENK_SPINLOCK_H_
