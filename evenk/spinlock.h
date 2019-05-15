@@ -125,7 +125,8 @@ public:
 
 	void unlock() noexcept
 	{
-		head_.fetch_add(1, std::memory_order_release);
+		base_type head = head_.load(std::memory_order_relaxed);
+		head_.store(head + 1, std::memory_order_release);
 	}
 
 private:
