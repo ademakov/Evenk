@@ -192,7 +192,7 @@ main()
 		auto saved_handler = signal(SIGSEGV, signal_handler);
 		auto jmp_result = setjmp(jmp_target);
 		if (jmp_result) {
-			printf("signal %d caught on its call\n", jmp_result);
+			printf("signal %d caught on its call (as expected)\n", jmp_result);
 		} else {
 			task();
 		}
@@ -207,7 +207,7 @@ main()
 		try {
 			task();
 		} catch (std::bad_function_call&) {
-			printf("exception caught on its call\n");
+			printf("exception caught on its call (as expected)\n");
 		}
 	}
 	printf("\n");
