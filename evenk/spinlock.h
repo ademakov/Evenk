@@ -205,8 +205,13 @@ public:
 	}
 
 private:
+#if EVENK_SHARED_TICKET_TESTING
+#pragma message("using very small shared ticket size to trigger possible bugs with more probability")
+	using base_type = std::uint8_t;
+#else
 	using base_type = std::uint32_t;
-	static constexpr base_type shared_step = 1 << 16;
+#endif
+	static constexpr base_type shared_step = 1 << (8 * sizeof(base_type) / 2);
 	static constexpr base_type exclusive_mask = shared_step - 1;
 	static constexpr base_type exclusive_step = 1;
 
