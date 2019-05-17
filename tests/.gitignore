@@ -1,5 +1,6 @@
 /lock-bench
 /queue-bench
+/shared-lock-test
 /task-test
 /thread-test
 /thread_pool-test
