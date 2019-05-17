@@ -20,11 +20,11 @@ thread_routine()
 void
 print_affinity(const evenk::thread::cpuset_type &affinity)
 {
-	std::cout << "CPU affinity info ";
+	std::cout << "CPU affinity info";
 	if (affinity.size() == 0) {
-		std::cout << "is not available";
+		std::cout << " is not available";
 	} else {
-		std::cout << ':' << affinity.size() << " CPUs:";
+		std::cout << ": " << affinity.size() << " CPUs:";
 		for (std::size_t cpu = 0; cpu < affinity.size(); cpu++)
 			if (affinity[cpu])
 				std::cout << " " << cpu;
