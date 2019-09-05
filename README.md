@@ -9,9 +9,12 @@ features do not function there.
 The library itself is header-only so using it is possible just by copying
 the header files wherever you like to include them from.
 
-Building is only needed for tests. It is required to have installed on your
-system automake, autoconf and, of course, make and gcc or clang. As soon as
-you have these just run the following commands:
+[ Currently the above is not true for "task.h" and "thread.h", these files
+  depend on "config.h" that is generated with the steps described below. ]
+
+The build step is needed for tests. It is required to have on your system
+the following tools installed: automake, autoconf and, of course, make and
+gcc or clang. As soon as you have these just run the following commands:
 
 ```
 > ./bootstrap
