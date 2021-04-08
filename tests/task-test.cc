@@ -1,5 +1,6 @@
 #include <evenk/task.h>
 
+#include <cstdio>
 #include <experimental/memory_resource>
 
 #include <signal.h>
